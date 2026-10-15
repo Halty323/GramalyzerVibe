@@ -12,7 +12,8 @@
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "start": "tsx scripts/backend.ts spring-boot:run",
-    "test": "tsx scripts/backend.ts test",
+    "test": "npm run test:startup && tsx scripts/backend.ts test",
+    "test:startup": "tsx --test tests/startup.test.ts",
     "test:e2e": "playwright test",
     "build:api": "tsx scripts/backend.ts package -DskipTests"
   },

@@ -1,5 +1,11 @@
 import { spawn } from 'node:child_process';
-import { runBackend } from './backend.js';
+import { backendDirectory, runBackend } from './backend.js';
+try {
+  backendDirectory();
+} catch (error) {
+  console.error((error as Error).message);
+  process.exit(1);
+}
 const children = [
   runBackend(['spring-boot:run', '-Dspring-boot.run.profiles=demo'], {DEMO_MODE: 'true', TELEGRAM_BOT_ENABLED: 'false'}, process.platform !== 'win32'),
   spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '0.0.0.0'], {stdio: 'inherit', detached: process.platform !== 'win32'}),
