@@ -1,0 +1,35 @@
+{
+  "name": "gramalyzer-admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "dev:api": "tsx scripts/backend.ts spring-boot:run -Dspring-boot.run.profiles=demo",
+    "dev:web": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "start": "tsx scripts/backend.ts spring-boot:run",
+    "test": "tsx scripts/backend.ts test",
+    "test:e2e": "playwright test",
+    "build:api": "tsx scripts/backend.ts package -DskipTests"
+  },
+  "dependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "lucide-react": "^1.57.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}
