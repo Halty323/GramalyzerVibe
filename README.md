@@ -4,19 +4,35 @@ A responsive channel overview, posting schedule, and bot settings interface for 
 
 ## Development
 
-Keep both checkouts beside one another:
+The website and backend are two repositories. Clone both, keeping the checkouts beside one another. From the directory where you keep projects (for example, `~/Documents`):
+
+```sh
+git clone https://github.com/Halty323/GramalyzerVibe.git
+git clone https://github.com/Halty323/GramalyzerBot.git
+cd GramalyzerVibe
+npm ci
+npm run dev
+```
+
+Both repositories' `main` branches now include the shared-backend implementation. If you already cloned the admin panel, only clone the missing bot repository. If your existing bot checkout has `src.zip` but no `pom.xml`, update that checkout with `git pull --ff-only origin main`; do not extract the original archive over the new source.
+
+The resulting layout is:
 
 ```text
-/workspace/GramalyzerVibe    # React UI, development launcher, browser tests
-/workspace/GramalyzerBot     # Java/Spring API, Telegram bot, database, worker
+Documents/
+├── GramalyzerVibe/   # React UI, development launcher, browser tests
+└── GramalyzerBot/    # Java/Spring API; contains pom.xml
 ```
 
 Requirements: Node.js 24+, a full JDK 21, and Maven 3.9+. The cloud environment includes verified JDK/Maven distributions under `/workspace/tools`. `scripts/backend.ts` finds them, configures the provided HTTPS proxy for Maven, and preserves the system TLS trust store. On another machine it uses your local Maven/JDK. Override locations using `GRAMALYZER_BOT_DIR`, `MAVEN_BIN`, or `GRAMALYZER_JAVA_HOME`.
 
+If the backend is somewhere else, supply its absolute directory, not the path to `pom.xml`:
+
 ```sh
-npm ci
-npm run dev
+GRAMALYZER_BOT_DIR=/absolute/path/to/GramalyzerBot npm run dev
 ```
+
+**“GramalyzerBot backend was not found”** means the launcher could not find `pom.xml` in the expected backend directory. The error prints that exact path and the clone/update command. Node.js 24 satisfies the frontend requirement; installing npm packages does not download the separate Java repository.
 
 This starts Vite on port 5173 and Spring on port 8080. `/api` requests proxy to Spring. Development always selects the `demo` profile, which seeds sample channels and posts once into `GramalyzerBot/.data/demo.mv.db`. Telegram polling and delivery are disabled in that profile, even if credentials exist. Drafts, settings, schedules, and API authentication are real backend features; sample analytics are labeled.
 
