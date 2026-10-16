@@ -58,6 +58,7 @@ The API and domain code live in `GramalyzerBot/src/main/java/com/halty/gramalyze
 | `POST /api/posts` | Create a draft or future scheduled text post |
 | `PATCH /api/posts/:id` | Replace editable post fields; requires the full post input |
 | `DELETE /api/posts/:id` | Remove an unsent post |
+| `GET /api/channels/:id/insights` | The bot's analysis for one channel: best times, upcoming good slots, weekly heatmap, what content resonates, top posts (`ChannelInsights` in `shared/types.ts`). `status` is `ready`, `learning` (under 20 usable posts) or `not_connected`. Demo channels get sample analytics. |
 
 Outside demo mode, requests require a browser session or `Authorization: Bearer <GRAMALYZER_API_TOKEN>`. Sessions last eight hours and reset when Spring restarts. This is a single administrative workspace with a shared access token; individual Telegram sign-in and channel-scoped moderator roles remain future work.
 
