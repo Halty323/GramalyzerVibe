@@ -74,6 +74,7 @@ The API and domain code live in `GramalyzerBot/src/main/java/com/halty/gramalyze
 | `PATCH /api/posts/:id` | Replace editable post fields; requires the full post input |
 | `DELETE /api/posts/:id` | Remove an unsent post |
 | `GET /api/channels/:id/feed?tz=` | One of your channels for the viewer: posts (from its public page when it has one, otherwise what the bot collected or Gramalyzer sent), the scheduled queue, and stats when known (`ChannelFeed`) |
+| `GET /api/channels/:id/photo` | The channel's Telegram profile photo, fetched by the bot (404 when it has none or the bot hasn't seen the channel yet; the avatar then shows initials) |
 | `GET /api/tracked?tz=` | The website's watchlist (`TrackedSummary[]`) |
 | `POST /api/tracked` | `{"username": "@name"}` or a `t.me` link: add a public channel, returns `TrackedDetail` |
 | `GET /api/tracked/:username?tz=` | Any public channel, watched or not: info, stats, top and latest posts (`TrackedDetail`) |

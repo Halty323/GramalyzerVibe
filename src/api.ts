@@ -1,4 +1,4 @@
-import type { ChannelFeed, ChannelInsights, TrackedDetail, TrackedSummary, TrackingError } from '../shared/types';
+import type { Channel, ChannelFeed, ChannelInsights, TrackedDetail, TrackedSummary, TrackingError } from '../shared/types';
 import type { I18n } from './i18n';
 
 /** A failed API call. code is set when the backend sends a translatable one (the /api/tracked errors). */
@@ -42,6 +42,9 @@ export const api = {
   refresh: (username: string) => request<TrackedDetail>(`/tracked/${encodeURIComponent(username)}/refresh?${tz()}`, {method: 'POST'}),
   untrack: (username: string) => request<void>(`/tracked/${encodeURIComponent(username)}`, {method: 'DELETE'}),
 };
+
+/** Own channels' profile photos come through the backend, which fetches them with the bot; null until the bot has seen the channel. */
+export const channelPhoto = (c: Channel) => c.telegramChatId ? `/api/channels/${encodeURIComponent(c.id)}/photo` : null;
 
 /** "@durov", "t.me/durov", "https://t.me/s/durov/123" → "durov"; null when it can't be a public channel username. */
 export function usernameFrom(input: string): string | null {

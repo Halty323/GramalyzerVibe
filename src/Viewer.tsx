@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { AlignLeft, ArrowLeft, AtSign, BadgeCheck, CalendarClock, Clock3, ExternalLink, Eye, FileText, Film, Forward, Image, Images, Info, Link2, ListChecks, LoaderCircle, MessageCircle, Mic, Music, Plus, RefreshCw, Search, Smile, Sparkles, Telescope, TriangleAlert, Video, X, type LucideIcon } from 'lucide-react';
 import type { Channel, ChannelFeed, FeedPost, Post, TrackedDetail, TrackedStats, TrackedSummary, TrackingError } from '../shared/types';
-import { api, errorMessage, trackingError, usernameFrom } from './api';
+import { api, channelPhoto, errorMessage, trackingError, usernameFrom } from './api';
 import { burst, burstFrom, ChannelAvatar, RichText, Sparkline } from './fun';
 import { isKey, useI18n, type StringKey } from './i18n';
 
@@ -70,7 +70,7 @@ export function Viewer({channels, posts, tracked, demo, selected, onSelect, onTr
       const feed = loaded.feed;
       const subscribers = feed.stats?.subscribers ?? c.subscribers;
       const username = c.handle ? c.handle.replace(/^@/, '') : null;
-      return {key: loaded.key, title: c.name, username, photoUrl: null, verified: false, description: c.description, subscribers,
+      return {key: loaded.key, title: c.name, username, photoUrl: channelPhoto(c), verified: false, description: c.description, subscribers,
         change7: feed.stats?.change7 ?? null, change30: feed.stats?.change30 ?? null, series: series(feed.stats),
         posts: feed.posts, scheduled: feed.scheduled, stats: feed.stats ?? localStats(feed.posts, subscribers), counters: null, top: topOf(feed.posts),
         source: demo ? 'demo' : feed.source, tracked: false, mine: c, fetchedAt: null, error: null, url: username && !demo ? `https://t.me/${username}` : null};
@@ -85,7 +85,7 @@ export function Viewer({channels, posts, tracked, demo, selected, onSelect, onTr
   const rows = useMemo(() => {
     const mine = channels.map(c => {
       const last = posts.filter(p => p.channelId === c.id && p.status === 'published').sort((a, b) => time(b.scheduledAt) - time(a.scheduledAt))[0];
-      return {sel: {kind: 'mine', id: c.id} as Selection, title: c.name, username: c.handle ? c.handle.replace(/^@/, '') : null, photoUrl: null, verified: false,
+      return {sel: {kind: 'mine', id: c.id} as Selection, title: c.name, username: c.handle ? c.handle.replace(/^@/, '') : null, photoUrl: channelPhoto(c), verified: false,
         preview: last ? last.title || last.body : c.description, at: last?.scheduledAt ?? null, subscribers: c.subscribers, mine: true, change7: null as number | null};
     });
     const handles = new Set(mine.map(m => m.username?.toLowerCase()));

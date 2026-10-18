@@ -106,3 +106,24 @@ test('the theme and language choices apply at once and survive a reload', async 
   await page.getByRole('button', {name: 'Switch to the light theme'}).click();
   await expect(html).toHaveAttribute('data-theme', 'light'); await expect(html).toHaveAttribute('dir', 'ltr');
 });
+test('own channels show their Telegram photo, and initials when they have none', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  let first = '', name = '';
+  // demo channels were never seen by a bot, so pretend they were and serve a photo for the first one only
+  await page.route('**/api/workspace', async route => {
+    const response = await route.fetch(); const workspace = await response.json();
+    workspace.channels = workspace.channels.map((c: {id: string; name: string}, i: number) => ({...c, telegramChatId: -1001000 - i}));
+    ({id: first, name} = workspace.channels[0]); await route.fulfill({response, json: workspace});
+  });
+  await page.route('**/api/channels/*/photo', route => route.request().url().includes(`/channels/${first}/photo`) ? route.fulfill({contentType: 'image/png', body: pixel}) : route.fulfill({status: 404}));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  const sidebar = page.locator('.sidebar-channels').first().locator('.channel-avatar');
+  await expect(sidebar.first().locator('img')).toHaveJSProperty('naturalWidth', 1);
+  await expect(sidebar.nth(1).locator('img')).toHaveCount(0); await expect(sidebar.nth(1)).not.toBeEmpty();
+  await page.locator('nav').getByRole('button', {name: 'Channel viewer'}).click();
+  const row = page.locator('.tg-chat', {hasText: name});
+  await expect(row.locator('.tg-avatar img')).toHaveJSProperty('naturalWidth', 1); await row.click();
+  await expect(page.locator('.tg-head .tg-avatar img')).toHaveJSProperty('naturalWidth', 1);
+  expect(errors).toEqual([]);
+});
