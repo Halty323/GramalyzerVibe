@@ -1,6 +1,6 @@
 # Gramalyzer admin workspace
 
-A responsive channel overview, posting schedule, and bot settings interface for [GramalyzerBot](https://github.com/Halty323/GramalyzerBot). React talks to the **Spring backend inside GramalyzerBot**; the Telegram consumer, posting worker, and website share the same services and database. There is no separate Express backend.
+A responsive channel overview, posting schedule, channel viewer, public-channel watchlist, and bot settings interface for [GramalyzerBot](https://github.com/Halty323/GramalyzerBot), in light and dark themes and 12 languages. React talks to the **Spring backend inside GramalyzerBot**; the Telegram consumer, posting worker, and website share the same services and database. There is no separate Express backend.
 
 ## Development
 
@@ -38,12 +38,27 @@ This starts Vite on port 5173 and Spring on port 8080. `/api` requests proxy to 
 
 ```sh
 npm run build       # Type-check and build the UI
-npm test            # Java integration/context tests
+npm test            # Launcher and translation checks, then the Java tests
+npm run test:i18n   # Every language has every key, placeholder and plural form
 npm run test:e2e    # Chromium browser flows, including mobile
 npm run build:api   # Build the executable Spring jar
 ```
 
-The browser tests use `/usr/bin/chromium` in this cloud environment; set `CHROMIUM_PATH` for another installation. Tests create/remove a post and change/restore settings; run against the demo workspace. The original SQLite sample database from the initial UI prototype is preserved under `.data/` but is no longer used or migrated automatically.
+The browser tests use `/usr/bin/chromium` in this cloud environment; set `CHROMIUM_PATH` for another installation. Tests create/remove a post, change/restore settings, remove and re-add a demo channel on the watchlist, and switch theme and language; run them against the demo workspace. The original SQLite sample database from the initial UI prototype is preserved under `.data/` but is no longer used or migrated automatically.
+
+## Channel viewer and watchlist
+
+**Channel viewer** shows any channel the way Telegram does: a chat list on the left (your channels and watched ones, plus a search box that also takes any public `@username` or `t.me` link), the channel's posts as message bubbles with views, reactions, comments and forwards, and an info panel with statistics: subscribers and their 7/30-day change, average views, ER (average views ÷ subscribers), reactions per 100 views, posts a day, posting hours and weekdays, content mix, popular hashtags and the most viewed posts. Your own channels can also show their scheduled queue; clicking a scheduled post edits it.
+
+**Watchlist** keeps public channels you don't run in one sortable table, with highlights for the fastest growing, most engaging and most active. Adding one needs only its username: no admin rights, and the bot doesn't join. The numbers come from the channel's public `t.me/s/<username>` page, which is what Telegram shows anyone without logging in, so channels with that preview turned off show only their size. The backend refreshes watched channels every couple of hours and keeps a daily subscriber history from the day a channel is first watched. The bot has the same watchlist for each person in Telegram (`/track`, `/watchlist`).
+
+## Themes and languages
+
+The theme follows the system until someone picks one with the sun/moon button; the choice is remembered and applied before the first paint. Colors are `light-dark()` pairs switched by `color-scheme` on `<html data-theme>`, so this needs a 2024-or-newer browser (Chrome 123, Safari 17.5, Firefox 120). Animations are skipped under `prefers-reduced-motion`.
+
+The interface speaks English, Russian, Ukrainian, Hindi, Indonesian, Portuguese (Brazil), Spanish, Arabic, Persian, Uzbek, Turkish and Vietnamese: the languages Telegram is used in most, matching the bot. It starts in the browser's language (Belarusian, Kazakh, Kyrgyz and Tajik get Russian, Malay gets Indonesian) and the language menu beside the theme button changes it. Arabic and Persian switch the layout to right-to-left. Numbers, dates and relative times use `Intl` in the chosen language.
+
+Strings live in `src/locales/<code>.ts`; `en.ts` is the source and the list of keys, and TypeScript rejects a locale that misses one. Placeholders look like `{name}`. Counted phrases are objects with one entry per `Intl.PluralRules` category the language uses (`one`/`other` in English, `one`/`few`/`many`/`other` in Russian and Ukrainian, six in Arabic). `npm run test:i18n` checks all of that.
 
 ## Shared backend
 
@@ -58,6 +73,12 @@ The API and domain code live in `GramalyzerBot/src/main/java/com/halty/gramalyze
 | `POST /api/posts` | Create a draft or future scheduled text post |
 | `PATCH /api/posts/:id` | Replace editable post fields; requires the full post input |
 | `DELETE /api/posts/:id` | Remove an unsent post |
+| `GET /api/channels/:id/feed?tz=` | One of your channels for the viewer: posts (from its public page when it has one, otherwise what the bot collected or Gramalyzer sent), the scheduled queue, and stats when known (`ChannelFeed`) |
+| `GET /api/tracked?tz=` | The website's watchlist (`TrackedSummary[]`) |
+| `POST /api/tracked` | `{"username": "@name"}` or a `t.me` link: add a public channel, returns `TrackedDetail` |
+| `GET /api/tracked/:username?tz=` | Any public channel, watched or not: info, stats, top and latest posts (`TrackedDetail`) |
+| `POST /api/tracked/:username/refresh` | Fetch it again now |
+| `DELETE /api/tracked/:username` | Remove it from the watchlist |
 | `GET /api/channels/:id/insights` | The bot's analysis for one channel: best times, upcoming good slots, weekly heatmap, what content resonates, top posts (`ChannelInsights` in `shared/types.ts`). `status` is `ready`, `learning` (under 20 usable posts) or `not_connected`. Demo channels get sample analytics. |
 
 Outside demo mode, requests require a browser session or `Authorization: Bearer <GRAMALYZER_API_TOKEN>`. Sessions last eight hours and reset when Spring restarts. This is a single administrative workspace with a shared access token; individual Telegram sign-in and channel-scoped moderator roles remain future work.
