@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ArrowDownToLine, ArrowRight, ArrowUpRight, Bell, CalendarDays, ChartNoAxesCombined, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, Eye, FileText, Languages, Layers, LayoutDashboard, LoaderCircle, Menu, MessageCircle, MessagesSquare, Moon, MoreHorizontal, Plus, Radio, Search, Send, Settings2, Sparkles, Sun, Telescope, Trash2, Users, X, Zap } from 'lucide-react';
 import type { Channel, Post, TrackedDetail, TrackedSummary, Workspace } from '../shared/types';
-import { api, ApiError, errorMessage, request } from './api';
+import { api, ApiError, channelPhoto, errorMessage, request } from './api';
 import { ChannelAvatar, CountUp } from './fun';
 import { LANGS, useI18n, type StringKey } from './i18n';
 import { ChannelBestTime, InsightsPage, RhythmText } from './Insights';
@@ -13,7 +13,10 @@ type Page = 'overview' | 'content' | 'schedule' | 'insights' | 'viewer' | 'watch
 const pages = [{id: 'overview', icon: LayoutDashboard}, {id: 'content', icon: FileText}, {id: 'schedule', icon: CalendarDays}, {id: 'insights', icon: ChartNoAxesCombined}, {id: 'viewer', icon: MessagesSquare}, {id: 'watchlist', icon: Telescope}, {id: 'channels', icon: Layers}, {id: 'settings', icon: Settings2}] as const;
 const fetchInsights = api.insights;
 const ZONES = ['Europe/Berlin', 'Europe/London', 'Europe/Moscow', 'Europe/Kyiv', 'Europe/Istanbul', 'Asia/Tehran', 'Asia/Dubai', 'Asia/Tashkent', 'Asia/Kolkata', 'Asia/Ho_Chi_Minh', 'Asia/Jakarta', 'Asia/Singapore', 'America/Sao_Paulo', 'America/New_York', 'America/Los_Angeles', 'UTC'];
-function Avatar({channel, small = false}: {channel: Channel; small?: boolean}) {return <span className={`channel-avatar ${channel.color} ${small ? 'small' : ''}`}>{channel.initials}</span>;}
+function Avatar({channel, small = false}: {channel: Channel; small?: boolean}) {
+  const photo = channelPhoto(channel); const [broken, setBroken] = useState<string | null>(null);
+  return <span className={`channel-avatar ${channel.color} ${small ? 'small' : ''}`}>{channel.initials}{photo && broken !== photo && <img src={photo} alt="" onError={() => setBroken(photo)}/>}</span>;
+}
 function Pill({status}: {status: Post['status']}) {const {t} = useI18n(); return <span className={`pill ${status}`}><span/>{t(`status.${status}`)}</span>;}
 
 export default function App() {

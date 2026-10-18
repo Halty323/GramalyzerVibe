@@ -140,7 +140,7 @@ tbody tr,.schedule-row{animation:rise .4s ease-out both;animation-delay:calc(var
 
 /* Channel viewer: Telegram's layout in our colors */
 .tg-avatar{border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:600;flex-shrink:0;overflow:hidden;letter-spacing:-.3px;text-shadow:0 1px 1px #0000001f;user-select:none}
-.tg-avatar img{width:100%;height:100%;object-fit:cover}
+.tg-avatar,.channel-avatar{position:relative;overflow:hidden}.tg-avatar img,.channel-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .page-body.viewer-body{padding:18px 22px;max-width:none;container-type:inline-size}
 .tg{display:grid;grid-template-columns:300px minmax(0,1fr);height:calc(100dvh - 76px - 36px);min-height:460px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:relative;box-shadow:0 2px 2px var(--shadow)}
 .tg.has-info{grid-template-columns:300px minmax(0,1fr) 330px}
