@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CalendarDays, ChartNoAxesCombined, Clock3, ExternalLink, FlaskConical, LoaderCircle, Radio, Sparkles, TrendingUp } from 'lucide-react';
 import type { Channel, ChannelInsights, InsightGroup, Weekday } from '../shared/types';
 
@@ -71,4 +71,35 @@ function Groups({title, groups, label, empty}: {title: string; groups: InsightGr
   if (!groups.length) return empty ? <div className="ins-group"><h3>{title}</h3><p className="ins-muted">{empty}</p></div> : null;
   const max = Math.max(1.5, ...groups.map(g => g.lift));
   return <div className="ins-group"><h3>{title}</h3>{groups.map(g => <div className="ins-bar" key={g.key}><span>{label(g.key)}</span><span className="ins-track"><span className={tone(g.lift)} style={{width: `${Math.min(100, g.lift / max * 100)}%`}}/></span><span className={`ins-lift ${tone(g.lift)}`}>{lift(g.lift)}</span></div>)}</div>;
+}
+
+/** Loads a channel's insights; null while loading or when there is no channel. */
+export function useInsights(channelId: string | undefined, fetchInsights: (id: string) => Promise<ChannelInsights>) {
+  const [data, setData] = useState<ChannelInsights | null>(null);
+  useEffect(() => {
+    let live = true;
+    setData(null);
+    if (channelId) fetchInsights(channelId).then(d => {if (live) setData(d);}).catch(() => {/* the card falls back to its general text */});
+    return () => {live = false;};
+  }, [channelId, fetchInsights]);
+  return data;
+}
+
+/** The "best time" figure on a channel card. */
+export function ChannelBestTime({channelId, fetchInsights}: {channelId: string; fetchInsights: (id: string) => Promise<ChannelInsights>}) {
+  const data = useInsights(channelId, fetchInsights);
+  if (!data) return <div><strong>…</strong><small>Best time to post</small></div>;
+  if (data.status === 'ready' && data.bestTimes[0]) return <div><strong>{dayShort(data.bestTimes[0].day)} {hour(data.bestTimes[0].hour)}</strong><small>Best time · {lift(data.bestTimes[0].lift)} typical</small></div>;
+  if (data.status === 'learning') return <div><strong>Learning</strong><small>{data.postsNeeded} more {data.postsNeeded === 1 ? 'post' : 'posts'} for insights</small></div>;
+  return <div><strong>—</strong><small>Bot isn’t collecting yet</small></div>;
+}
+
+/** The heading and text of the Overview's posting-rhythm card, from one channel's insights; {@code fallback} when there is nothing specific to say. */
+export function RhythmText({channel, fetchInsights, onPlan, fallback}: {channel: Channel | undefined; fetchInsights: (id: string) => Promise<ChannelInsights>; onPlan: (at: string) => void; fallback: ReactNode}) {
+  const data = useInsights(channel?.id, fetchInsights);
+  if (!channel || !data) return <>{fallback}</>;
+  const next = data.suggestions[0];
+  if (data.status === 'ready' && next) return <><h3>Next good slot: {new Date(next.at).toLocaleString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})}</h3><p>{dayName(next.day)} around {hour(next.hour)} is one of the best times for {channel.name}: about {lift(next.lift)} your typical engagement.</p><button className="button lavender full-width" onClick={() => onPlan(next.at)}>Plan a post then<CalendarDays size={16}/></button></>;
+  if (data.status === 'learning') return <><h3>Still learning {channel.name}’s rhythm</h3><p>{data.postsNeeded} more {data.postsNeeded === 1 ? 'post' : 'posts'} until the first timing recommendations. Keep posting as usual.</p></>;
+  return <>{fallback}</>;
 }
