@@ -22,11 +22,13 @@ type Chat = {
   source: ChannelFeed['source'] | 'demo'; tracked: boolean; mine: Channel | null; fetchedAt: string | null; error: TrackingError | null; url: string | null;
 };
 
-export function Viewer({channels, posts, tracked, demo, selected, onSelect, onTrack, onUntrack, onEditPost, onNewPost, onToast}: {
+export function Viewer({channels, posts, tracked, demo, selected, onSelect, onTrack, onUntrack, onEditPost, onNewPost, onToast, onAi}: {
   channels: Channel[]; posts: Post[]; tracked: TrackedSummary[] | null; demo: boolean;
   selected: Selection | null; onSelect: (s: Selection | null) => void;
   onTrack: (username: string) => Promise<TrackedDetail | null>; onUntrack: (username: string) => Promise<boolean>;
   onEditPost: (id: string) => void; onNewPost: (channelId: string) => void; onToast: (text: string) => void;
+  /** Asks the AI to break down the open channel. */
+  onAi: (title: string, posts: FeedPost[], stats: TrackedStats | null) => void;
 }) {
   const i18n = useI18n();
   const {t, tn, compact} = i18n;
@@ -163,6 +165,7 @@ export function Viewer({channels, posts, tracked, demo, selected, onSelect, onTr
             <button className={`tg-icon ${finding ? 'on' : ''}`} aria-label={t('view.search_in')} aria-pressed={finding} onClick={() => {setFinding(v => !v); setQuery('');}}><Search size={18}/></button>
             {chat.mine && <button className={`tg-icon ${mode === 'scheduled' ? 'on' : ''}`} aria-label={t('view.scheduled')} aria-pressed={mode === 'scheduled'} onClick={() => setMode(m => m === 'posts' ? 'scheduled' : 'posts')}><CalendarClock size={18}/>{chat.scheduled.length > 0 && <span className="tg-badge">{chat.scheduled.length}</span>}</button>}
             {!chat.mine && <button className="tg-icon" aria-label={t('view.refresh')} disabled={busy} onClick={refresh}><RefreshCw size={18} className={busy ? 'spin' : ''}/></button>}
+            <button className="tg-icon" aria-label={t('ai.breakdown')} title={t('ai.breakdown')} disabled={!chat.posts.length} onClick={() => onAi(chat.title, chat.posts, chat.stats)}><Sparkles size={18}/></button>
             <button className={`tg-icon ${info ? 'on' : ''}`} aria-label={t('view.info')} aria-pressed={info} onClick={() => setInfo(v => !v)}><Info size={18}/></button>
           </div>}
         </header>

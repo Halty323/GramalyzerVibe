@@ -1,0 +1,26 @@
+[package]
+name = "gramalyzer"
+version = "0.1.0"
+description = "Gramalyzer, the Telegram channel workspace, as an app for Android, iOS and desktop"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+# Android and iOS load the app as a library; the desktop build links it into main.rs.
+name = "gramalyzer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+# unsafe-headers lets the app drop the Origin header, so servers and AI providers see an API client, not a web page.
+tauri-plugin-http = { version = "2.8", features = ["unsafe-headers"] }
+tauri-plugin-opener = "2.7"
+
+[profile.release]
+lto = true
+opt-level = "s"
+strip = true

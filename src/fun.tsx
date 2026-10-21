@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { usePhoto } from './api';
 
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -69,8 +70,9 @@ export const initials = (title: string) => title.split(/\s+/).filter(Boolean).sl
 export const avatarColors = (seed: string) => AVATARS[Math.abs(hash(seed)) % AVATARS.length];
 
 /** A round, Telegram-style channel picture: the photo when there is one, otherwise initials on a gradient. */
-export function ChannelAvatar({title, seed, photoUrl, size = 44}: {title: string; seed: string; photoUrl?: string | null; size?: number}) {
+export function ChannelAvatar({title, seed, photoUrl: url, size = 44}: {title: string; seed: string; photoUrl?: string | null; size?: number}) {
   const [broken, setBroken] = useState(false);
+  const photoUrl = usePhoto(url);
   const [from, to] = avatarColors(seed);
   return <span className="tg-avatar" style={{width: size, height: size, fontSize: size * .38, background: `linear-gradient(160deg, ${from}, ${to})`}} aria-hidden="true">
     {photoUrl && !broken ? <img src={photoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)}/> : initials(title)}

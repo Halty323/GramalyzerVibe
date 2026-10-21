@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import type { Channel, ChannelFeed, ChannelInsights, TrackedDetail, TrackedSummary, TrackingError } from '../shared/types';
 import type { I18n } from './i18n';
+import { apiUrl, authHeaders, httpFetch, isApp } from './platform';
 
 /** A failed API call. code is set when the backend sends a translatable one (the /api/tracked errors). */
 export class ApiError extends Error {
@@ -7,7 +9,7 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${url}`, {...options, headers: {'Content-Type': 'application/json', ...options?.headers}});
+  const res = await httpFetch(apiUrl(url), {...options, headers: {'Content-Type': 'application/json', ...authHeaders(), ...options?.headers}});
   if (!res.ok) {
     const data: {error?: string; code?: string} = await res.json().catch(() => ({}));
     throw new ApiError(data.error ?? '', res.status, data.code);
@@ -45,6 +47,26 @@ export const api = {
 
 /** Own channels' profile photos come through the backend, which fetches them with the bot; null until the bot has seen the channel. */
 export const channelPhoto = (c: Channel) => c.telegramChatId ? `/api/channels/${encodeURIComponent(c.id)}/photo` : null;
+
+const photos = new Map<string, Promise<string | null>>();
+/**
+ * What an <img> can show for a picture URL. The app can't attach its token to an <img>, so it downloads pictures
+ * from the API itself and shows them from memory; everything else is used as it is.
+ */
+export function usePhoto(url: string | null | undefined): string | null {
+  const own = isApp && !!url?.startsWith('/api/');
+  const [src, setSrc] = useState<string | null>(own ? null : url ?? null);
+  useEffect(() => {
+    if (!own || !url) {setSrc(url ?? null); return;}
+    let live = true;
+    // keyed by the full address, so another server's picture with the same path is fetched anew
+    const address = apiUrl(url.slice(4));
+    if (!photos.has(address)) photos.set(address, httpFetch(address, {headers: authHeaders()}).then(async r => r.ok ? URL.createObjectURL(await r.blob()) : null).catch(() => null));
+    void photos.get(address)!.then(s => {if (live) setSrc(s);});
+    return () => {live = false;};
+  }, [url, own]);
+  return src;
+}
 
 /** "@durov", "t.me/durov", "https://t.me/s/durov/123" → "durov"; null when it can't be a public channel username. */
 export function usernameFrom(input: string): string | null {
