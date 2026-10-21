@@ -40,6 +40,7 @@ This starts Vite on port 5173 and Spring on port 8080. `/api` requests proxy to 
 npm run build       # Type-check and build the UI
 npm test            # Launcher and translation checks, then the Java tests
 npm run test:i18n   # Every language has every key, placeholder and plural form
+npm run test:ai     # AI streaming, planner parsing and prompts
 npm run test:e2e    # Chromium browser flows, including mobile
 npm run build:api   # Build the executable Spring jar
 ```
@@ -51,6 +52,40 @@ The browser tests use `/usr/bin/chromium` in this cloud environment; set `CHROMI
 **Channel viewer** shows any channel the way Telegram does: a chat list on the left (your channels and watched ones, plus a search box that also takes any public `@username` or `t.me` link), the channel's posts as message bubbles with views, reactions, comments and forwards, and an info panel with statistics: subscribers and their 7/30-day change, average views, ER (average views ÷ subscribers), reactions per 100 views, posts a day, posting hours and weekdays, content mix, popular hashtags and the most viewed posts. Your own channels can also show their scheduled queue; clicking a scheduled post edits it.
 
 **Watchlist** keeps public channels you don't run in one sortable table, with highlights for the fastest growing, most engaging and most active. Adding one needs only its username: no admin rights, and the bot doesn't join. The numbers come from the channel's public `t.me/s/<username>` page, which is what Telegram shows anyone without logging in, so channels with that preview turned off show only their size. The backend refreshes watched channels every couple of hours and keeps a daily subscriber history from the day a channel is first watched. The bot has the same watchlist for each person in Telegram (`/track`, `/watchlist`).
+
+## AI writing
+
+The AI tools from Gramalyzer Studio work here too, on any OpenAI-compatible provider. **Settings → AI writing** picks one (Groq, Google Gemini, OpenRouter, Cerebras, Mistral and GitHub Models have free keys; Ollama runs locally; any other compatible endpoint works), and can load the provider's model list and test the connection. The key stays in this browser or phone; requests go straight from it to the provider, not through the Gramalyzer server. On the website that means the provider must accept requests from browsers (CORS): one that doesn't shows “Couldn’t reach the AI provider”, and Ollama needs `OLLAMA_ORIGINS` set to the site's address. The phone and desktop app have no such limit.
+
+- **Copilot** in the post editor drafts a post from a brief, or improves, shortens, expands, fixes, retones, translates the text, suggests a hook, hashtags or titles.
+- **AI planner** on the Schedule writes the next few posts in full for the channel's best upcoming times, to review and save as drafts.
+- **Assistant** is a chat that knows the channel's analytics, queue and watchlist; any answer opens as a new post.
+- **AI review** on Insights, **AI breakdown** of any channel in the viewer, and **Compare with AI** on the watchlist.
+
+Every prompt carries the channel's description, its most engaging and newest posts, its house style (length, emoji, hashtags), what Insights says works, and the brand voice from settings, so drafts stay on the channel's subject. Prompts live in `src/ai/prompts.ts`, a port of Studio's `desktop/src/prompts.rs`; change both together.
+
+## Phone app (Android and iOS)
+
+The same interface ships as a phone app built with [Tauri 2](https://v2.tauri.app) (`src-tauri/`). It opens to a sign-in screen that asks for the Gramalyzer server's address and its API token (`GRAMALYZER_API_TOKEN`, which the server needs anyway once it is public), then works like the website: the app sends the token with every request, so the server needs no changes. Outside links open in the phone's browser.
+
+**Getting the app.** GitHub Actions (`.github/workflows/mobile.yml`) builds both on every pull request that touches the app and on `main`; download them from the run's **Artifacts**. Pushing a tag such as `app-v0.1.0` also attaches them to a GitHub release.
+
+- **Android:** `Gramalyzer-<version>.apk`. Open it on the phone and allow installing from that app when asked. To let new builds update an installed one, the APKs must share a signing key: create one with `keytool -genkeypair -keystore release.jks -alias gramalyzer -keyalg RSA -keysize 2048 -validity 10000` and add the repository secrets `ANDROID_KEYSTORE_BASE64` (`base64 -w0 release.jks`), `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS`. Without them each build is signed with a one-off key.
+- **iOS:** `Gramalyzer-<version>-unsigned.ipa`. Apple only installs signed apps, so sign it on install with [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io) and a free Apple ID (such installs last 7 days), or build it signed from a Mac with an Apple developer account.
+
+**Building locally.** The app needs Rust and the Tauri prerequisites for the platform ([Android](https://v2.tauri.app/start/prerequisites/#android): Android Studio, the NDK and `NDK_HOME`; [iOS](https://v2.tauri.app/start/prerequisites/#ios): a Mac with Xcode). The Android and iOS projects are generated, not committed:
+
+```sh
+npx tauri android init            # once; then copy src-tauri/icons/android into gen/android/app/src/main/res
+npm run app:android               # run on a connected phone or emulator, with hot reload
+npx tauri android build --apk     # release APK in src-tauri/gen/android/app/build/outputs/apk
+
+npx tauri ios init                # once, on a Mac; then copy src-tauri/icons/ios/*.png into gen/apple/Assets.xcassets/AppIcon.appiconset
+npm run app:ios                   # run in the simulator or on a phone
+npm run app:dev                   # the desktop app (Windows, macOS, Linux)
+```
+
+During development the app loads the Vite dev server, so changes show at once; point it at a backend your phone can reach (for `npm run dev`, your computer's LAN address and port 8080). App icons are drawn in `src-tauri/icons/source/` (`npx tauri icon src-tauri/icons/source/icons.json` regenerates them; the iOS set comes from `ios.svg`). Inside the app, `src/platform.ts` sends requests through Tauri's HTTP client instead of the browser's, which removes CORS and lets one build talk to any server and AI provider.
 
 ## Themes and languages
 

@@ -127,3 +127,31 @@ test('own channels show their Telegram photo, and initials when they have none',
   await expect(page.locator('.tg-head .tg-avatar img')).toHaveJSProperty('naturalWidth', 1);
   expect(errors).toEqual([]);
 });
+test('the AI copilot drafts a post for the channel, and asks for a provider until one is set', async ({page}) => {
+  await page.goto('/');
+  await page.getByRole('button', {name: 'New post', exact: true}).click();
+  await expect(page.getByRole('dialog').getByRole('button', {name: 'Connect AI'})).toBeVisible();
+  // a stand-in provider: the answer comes back as server-sent events, split mid-word
+  let prompt = '';
+  const sse = ['Осінь ', 'у міс', 'ті 🍂', '\n\nНовий допис.'].map(content => `data: ${JSON.stringify({choices: [{delta: {content}}]})}\n\n`).join('') + 'data: [DONE]\n\n';
+  await page.route('https://ai.example.test/v1/chat/completions', async route => {
+    prompt = route.request().postData() ?? '';
+    await route.fulfill({contentType: 'text/event-stream', headers: {'Access-Control-Allow-Origin': '*'}, body: sse});
+  });
+  await page.evaluate(() => localStorage.setItem('gramalyzer.ai', JSON.stringify({provider: 'custom', baseUrl: 'https://ai.example.test/v1', apiKey: 'test-key', model: 'test-model', voice: 'Warm and brief', contentLang: ''})));
+  await page.reload();
+  await page.getByRole('button', {name: 'New post', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  const channel = await dialog.getByLabel('Channel').locator('option:checked').textContent();
+  await dialog.getByLabel('Brief', {exact: true}).fill('autumn in the city');
+  await dialog.getByRole('button', {name: 'Draft with AI'}).click();
+  await expect(dialog.locator('.ai-text')).toHaveText('Осінь у місті 🍂\n\nНовий допис.');
+  await dialog.getByRole('button', {name: 'Replace text'}).click();
+  await expect(dialog.getByLabel('Message', {exact: true})).toHaveValue('Осінь у місті 🍂\n\nНовий допис.');
+  const sent = JSON.parse(prompt) as {model: string; stream: boolean; messages: {role: string; content: string}[]};
+  expect(sent.model).toBe('test-model'); expect(sent.stream).toBe(true);
+  expect(sent.messages[0].content).toContain(`Channel: ${channel}`);
+  expect(sent.messages[0].content).toContain('Brand voice to follow: Warm and brief');
+  expect(sent.messages[1].content).toContain('Brief: autumn in the city');
+  await page.evaluate(() => localStorage.removeItem('gramalyzer.ai'));
+});

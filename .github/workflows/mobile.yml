@@ -1,0 +1,141 @@
+name: Mobile app
+
+# Builds the Gramalyzer app for Android (an installable APK) and iOS (an unsigned IPA) from the website's code.
+# Tag a commit app-v1.2.3 to attach both to a GitHub release.
+on:
+  push:
+    branches: [main]
+    tags: ['app-v*']
+  pull_request:
+    paths: ['src/**', 'src-tauri/**', 'shared/**', 'index.html', 'package.json', 'package-lock.json', 'vite.config.ts', '.github/workflows/mobile.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: 17}
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android'}
+      - uses: Swatinem/rust-cache@v2
+        with: {workspaces: 'src-tauri -> target', key: android}
+      - run: npm ci
+
+      - name: Generate the Android project
+        run: |
+          # The runner image ships the Android SDK and NDK; Tauri finds the NDK through NDK_HOME.
+          echo "NDK_HOME=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}" >> "$GITHUB_ENV"
+          export NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          npx tauri android init --ci 2>&1 | tee -a build.log
+          cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+
+      - name: Build the APK
+        run: npx tauri android build --apk --target aarch64 --target armv7 --target x86_64 2>&1 | tee -a build.log
+
+      - name: Sign the APK
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          unsigned=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -1)
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > release.jks
+          else
+            # No signing key in the repository secrets: sign with a key made for this build only. The APK installs, but
+            # the next build cannot update it in place; add the secrets (see README) for builds that update each other.
+            echo "::warning::Signed with a one-off key. Add ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS secrets so builds can update each other."
+            KEYSTORE_PASSWORD=$(openssl rand -hex 16); KEY_ALIAS=gramalyzer
+            keytool -genkeypair -keystore release.jks -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$KEYSTORE_PASSWORD" -keypass "$KEYSTORE_PASSWORD" -dname "CN=Gramalyzer test build"
+          fi
+          version=$(node -p "require('./package.json').version")
+          mkdir -p out
+          "$tools/zipalign" -p -f 4 "$unsigned" aligned.apk
+          "$tools/apksigner" sign --ks release.jks --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD \
+            --out "out/Gramalyzer-$version.apk" aligned.apk
+          "$tools/apksigner" verify "out/Gramalyzer-$version.apk"
+          rm -f release.jks
+
+      - uses: actions/upload-artifact@v4
+        with: {name: gramalyzer-android, path: out/*.apk, if-no-files-found: error}
+
+      - name: Show why the build failed
+        if: failure()
+        run: |
+          # Annotations show on the run's summary page, which anyone can read without opening the full log.
+          [ -f build.log ] || exit 0
+          tail -n 150 build.log | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > tail.log
+          split -l 50 tail.log part.
+          for f in part.*; do echo "::error title=Android build log, $f::$(sed 's/%/%25/g' "$f" | awk '{printf "%s%%0A", $0}')"; done
+
+  ios:
+    name: iOS
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - uses: dtolnay/rust-toolchain@stable
+        with: {targets: 'aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios'}
+      - uses: Swatinem/rust-cache@v2
+        with: {workspaces: 'src-tauri -> target', key: ios}
+      - run: npm ci
+
+      - name: Generate the Xcode project
+        run: |
+          npx tauri ios init --ci 2>&1 | tee -a build.log
+          cp src-tauri/icons/ios/*.png src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/
+
+      # Without an Apple developer account the IPA stays unsigned; AltStore or Sideloadly sign it with any Apple ID.
+      - name: Build the IPA
+        run: npx tauri ios build --no-sign --target aarch64 2>&1 | tee -a build.log
+
+      - name: Collect the IPA
+        run: |
+          version=$(node -p "require('./package.json').version")
+          mkdir -p out
+          cp "$(find src-tauri/gen/apple/build -name '*.ipa' | head -1)" "out/Gramalyzer-$version-unsigned.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with: {name: gramalyzer-ios, path: out/*.ipa, if-no-files-found: error}
+
+      - name: Show why the build failed
+        if: failure()
+        run: |
+          [ -f build.log ] || exit 0
+          tail -n 150 build.log | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > tail.log
+          split -l 50 tail.log part.
+          for f in part.*; do echo "::error title=iOS build log, $f::$(sed 's/%/%25/g' "$f" | awk '{printf "%s%%0A", $0}')"; done
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: out, merge-multiple: true}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          body: |
+            Android: download the APK on the phone and open it (allow installing from your browser when asked).
+            iOS: the IPA is unsigned; install it with AltStore or Sideloadly and your Apple ID.
