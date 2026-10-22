@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowUp, Bot, CalendarPlus, Check, Copy, ExternalLink, Eye, EyeOff, LoaderCircle, MessageSquarePlus, PenLine, RefreshCw, Sparkles, Square, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, Bot, CalendarPlus, Check, Copy, ExternalLink, Eye, EyeOff, Image, LoaderCircle, MessageSquarePlus, PenLine, RefreshCw, Settings2, Sparkles, Square, WandSparkles, X } from 'lucide-react';
 import type { Channel, ChannelInsights, FeedPost, Post, TrackedStats, TrackedSummary } from '../shared/types';
 import { AiError, complete, listModels, parsePlan, streamChat, type ChatMessage, type PlannedPost } from './ai/client';
 import { channelContext, grounding } from './ai/context';
+import { channelLook, type Look } from './ai/look';
 import * as prompts from './ai/prompts';
 import { PROVIDERS, provider } from './ai/providers';
 import { aiReady, saveAiSettings, useAiSettings, type AiSettings } from './ai/settings';
@@ -65,6 +66,52 @@ export function AiOutput({text, running, error, onStop, children}: {text: string
   </div>;
 }
 
+/** What the AI knows about a channel: how many of its posts it reads, and whether it has looked at the pictures. */
+function useKnowledge(channel: Channel | undefined) {
+  const settings = useAiSettings();
+  const [known, setKnown] = useState<{posts: number; pictures: number; look: Look | null} | null>(null);
+  const [again, setAgain] = useState(0);
+  useEffect(() => {
+    if (!channel || !aiReady(settings)) {setKnown(null); return;}
+    let live = true;
+    void grounding(channel.id).then(({feed}) => {
+      const own = prompts.ownPosts(feed);
+      const counts = {posts: own.length, pictures: own.filter(prompts.isPicture).length};
+      if (!live) return;
+      setKnown({...counts, look: null});
+      return channelLook(channel, feed, settings, again > 0).then(look => {if (live) setKnown({...counts, look});});
+    });
+    return () => {live = false;};
+  }, [channel?.id, settings.baseUrl, settings.apiKey, settings.visionModel, again]); // eslint-disable-line react-hooks/exhaustive-deps
+  return {known, again: () => setAgain(n => n + 1)};
+}
+
+/** A line under an AI tool saying what it read of the channel; opens to what it saw in the pictures. */
+function Knowledge({channel, onSetup}: {channel: Channel | undefined; onSetup: () => void}) {
+  const {t, tn} = useI18n();
+  const settings = useAiSettings();
+  const {known, again} = useKnowledge(channel);
+  if (!channel || !known) return null;
+  const look = known.look;
+  // Pictures the AI can't see: the posts came from the bot, which keeps captions but not pictures.
+  const hidden = look?.state === 'none' && known.pictures > 0;
+  const state = !look ? (known.pictures ? t('ai.look_pending') : '') : look.state === 'ready' ? t('ai.look_ready') : look.state === 'failed' ? t('ai.look_failed_short') : look.state === 'off' ? t('ai.look_off') : hidden ? t('ai.look_hidden') : '';
+  return <details className="ai-knows">
+    <summary><Eye size={14}/><span>{known.posts ? tn('ai.knows_posts', known.posts) : t('ai.knows_none')}{known.pictures > 0 && ` · ${tn('ai.knows_pictures', known.pictures)}`}{state && ` · ${state}`}</span>{!look && known.pictures > 0 && <LoaderCircle size={13} className="spin"/>}</summary>
+    <div className="ai-knows-body">
+      {!known.posts && <p>{t('ai.knows_none_text')}</p>}
+      {look?.state === 'ready' && <><strong><Image size={14}/>{t('ai.look_title')}</strong><p dir="auto">{look.text}</p></>}
+      {look?.state === 'failed' && <p className="error-text">{t('ai.look_failed', {model: settings.visionModel})} {aiErrorText(new AiError(look.error!.kind, look.error!.detail), t)}</p>}
+      {look?.state === 'off' && <p>{t('ai.look_off_text')}</p>}
+      {hidden && <p>{t('ai.look_hidden_text')}</p>}
+      {(look?.state === 'ready' || look?.state === 'failed' || look?.state === 'off') && <div className="ai-actions">
+        {look.state !== 'off' && <button type="button" className="button small-button" onClick={again}><RefreshCw size={13}/>{t('ai.look_again')}</button>}
+        {look.state !== 'ready' && <button type="button" className="button small-button" onClick={onSetup}><Settings2 size={13}/>{t('ai.open_settings')}</button>}
+      </div>}
+    </div>
+  </details>;
+}
+
 const QUICK: {kind: prompts.Rewrite; key: 'ai.improve' | 'ai.hook' | 'ai.shorten' | 'ai.expand' | 'ai.grammar' | 'ai.hashtags' | 'ai.headlines'}[] = [
   {kind: 'improve', key: 'ai.improve'}, {kind: 'hook', key: 'ai.hook'}, {kind: 'shorten', key: 'ai.shorten'}, {kind: 'expand', key: 'ai.expand'},
   {kind: 'grammar', key: 'ai.grammar'}, {kind: 'hashtags', key: 'ai.hashtags'}, {kind: 'headlines', key: 'ai.headlines'},
@@ -88,8 +135,10 @@ export function Copilot({channel, posts, title, body, onBody, onTitle, onSetup}:
   }
   const result = ai.output.trim();
   const appendable = last === 'hashtags' || last === 'draft' || last === 'expand';
+  const picture = last === 'draft' ? prompts.splitPicture(result) : {text: result, picture: ''};
   return <section className="copilot">
     <h3><WandSparkles size={15}/>{t('ai.copilot')}</h3>
+    <Knowledge channel={channel} onSetup={onSetup}/>
     <div className="copilot-brief"><input aria-label={t('ai.brief')} placeholder={t('ai.brief_placeholder')} value={brief} onChange={e => setBrief(e.target.value)} onKeyDown={e => {if (e.key === 'Enter') {e.preventDefault(); go('draft');}}}/><button type="button" className="button primary" disabled={ai.running} onClick={() => go('draft')}><Sparkles size={15}/>{t('ai.draft')}</button></div>
     <div className="copilot-chips">
       {QUICK.map(q => <button type="button" key={q.kind} className="chip" disabled={ai.running} onClick={() => go(q.kind)}>{t(q.key)}</button>)}
@@ -100,8 +149,8 @@ export function Copilot({channel, posts, title, body, onBody, onTitle, onSetup}:
     <AiOutput text={ai.output} running={ai.running} error={ai.error} onStop={ai.stop}>
       {last === 'headlines'
         ? <button type="button" className="button small-button primary" onClick={() => {onTitle((result.split('\n').map(l => l.replace(/^\s*\d+[.)]\s*/, '').replace(/^["«“]|["»”]$/g, '').trim()).find(Boolean) ?? '').slice(0, 180)); ai.reset();}}><PenLine size={14}/>{t('ai.use_title')}</button>
-        : <>{last !== 'hashtags' && <button type="button" className="button small-button primary" onClick={() => {onBody(result.slice(0, 4096)); ai.reset();}}><Check size={14}/>{t('ai.replace')}</button>}
-          {appendable && body.trim() && <button type="button" className="button small-button" onClick={() => {onBody(`${body.trimEnd()}\n\n${result}`.slice(0, 4096)); ai.reset();}}>{t('ai.add_below')}</button>}
+        : <>{last !== 'hashtags' && <button type="button" className="button small-button primary" onClick={() => {onBody(picture.text.slice(0, 4096)); if (picture.picture && !title.trim()) onTitle(`${prompts.PICTURE_MARK} ${picture.picture}`.slice(0, 180)); ai.reset();}}><Check size={14}/>{t('ai.replace')}</button>}
+          {appendable && body.trim() && <button type="button" className="button small-button" onClick={() => {onBody(`${body.trimEnd()}\n\n${picture.text}`.slice(0, 4096)); ai.reset();}}>{t('ai.add_below')}</button>}
           {last === 'hashtags' && <button type="button" className="button small-button primary" onClick={() => {onBody(`${body.trimEnd()}\n\n${result}`.slice(0, 4096)); ai.reset();}}><Check size={14}/>{t('ai.add_below')}</button>}</>}
       <button type="button" className="button small-button" onClick={ai.reset}><X size={14}/>{t('ai.discard')}</button>
     </AiOutput>
@@ -150,6 +199,7 @@ export function Planner({channels, defaultChannel, posts, onSave, onSetup, onClo
   return <section className="panel ai-planner">
     <div className="panel-heading"><div><div className="mini-eyebrow"><Sparkles size={13}/>{t('ai.plan_open')}</div><h2>{t('ai.plan_title')}</h2><p>{t('ai.plan_text')}</p></div><button className="icon-button" aria-label={t('ai.close')} onClick={onClose}><X size={18}/></button></div>
     {!aiReady(settings) ? <div className="ai-body"><AiSetup onSetup={onSetup}/></div> : <div className="ai-body">
+      <Knowledge channel={channel} onSetup={onSetup}/>
       <div className="ai-form">
         <label>{t('ai.plan_channel')}<select value={channel?.id} onChange={e => setChannelId(e.target.value)}>{channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label>{t('ai.plan_count')}<select value={count} onChange={e => setCount(Number(e.target.value))}>{[3, 5, 7, 10].map(n => <option key={n} value={n}>{tn('ai.plan_posts', n)}</option>)}</select></label>
@@ -160,11 +210,14 @@ export function Planner({channels, defaultChannel, posts, onSave, onSetup, onClo
       {ideas.length > 0 && <>
         <ul className="ai-ideas">{ideas.map((idea, i) => <li key={i} className={idea.keep ? '' : 'off'}>
           <label className="ai-idea-head"><input type="checkbox" checked={idea.keep} onChange={e => setIdeas(list => list.map((x, j) => j === i ? {...x, keep: e.target.checked} : x))}/><strong dir="auto">{idea.title || prompts.splitTitle(idea.body).title}</strong><small>{date(idea.at, {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})}{idea.category && ` · ${idea.category}`}</small></label>
-          <p dir="auto">{idea.body}</p>
+          {idea.picture && <p className="ai-picture" dir="auto"><Image size={13}/><span><strong>{t('ai.picture_idea')}:</strong> {idea.picture}</span></p>}
+          {idea.body.trim() && <p dir="auto">{idea.body}</p>}
         </li>)}</ul>
         <div className="ai-planner-save"><span>{t('ai.plan_note')}</span><button className="button primary" disabled={saving || !kept.length} onClick={async () => {
           setSaving(true); setError('');
-          try {await onSave(kept.map(i => ({channelId: channel!.id, title: (i.title || prompts.splitTitle(i.body).title).slice(0, 180), body: i.body.slice(0, 4096), status: 'draft', scheduledAt: i.at, category: i.category.slice(0, 40) || 'AI'}))); setIdeas([]);}
+          // A picture post's title says what picture to attach; a post with no caption keeps that as its text until edited.
+          const mark = (i: PlannedPost) => `${prompts.PICTURE_MARK} ${i.picture.trim()}`;
+          try {await onSave(kept.map(i => ({channelId: channel!.id, title: (i.picture.trim() ? mark(i) : i.title || prompts.splitTitle(i.body).title).slice(0, 180), body: (i.body.trim() || mark(i)).slice(0, 4096), status: 'draft', scheduledAt: i.at, category: i.category.slice(0, 40) || 'AI'}))); setIdeas([]);}
           catch (e) {setError(aiErrorText(e, t));} finally {setSaving(false);}
         }}>{saving ? <LoaderCircle size={15} className="spin"/> : <CalendarPlus size={15}/>}{tn('ai.plan_save', kept.length)}</button></div>
       </>}
@@ -215,6 +268,7 @@ export function Assistant({channel, posts, tracked, onSetup, onDraft}: {channel:
   if (!ai.ready) return <section className="panel assistant"><div className="ai-body"><AiSetup onSetup={onSetup}/></div></section>;
   return <section className="panel assistant">
     <div className="assistant-bar"><span><Bot size={16}/>{channel ? <><strong>{channel.name}</strong> · {t('ai.chat_context')}</> : t('ai.chat_no_channel')}</span>{history.length > 0 && <button className="text-button" onClick={() => {ai.reset(); setHistory([]);}}><MessageSquarePlus size={15}/>{t('ai.chat_clear')}</button>}</div>
+    {channel && <div className="assistant-knows"><Knowledge channel={channel} onSetup={onSetup}/></div>}
     <div className="assistant-log">
       {!history.length && !ai.running && <div className="assistant-hello"><span className="ai-mark big"><Sparkles size={22}/></span><h3>{t('ai.chat_hello')}</h3><p>{t('ai.chat_hello_text')}</p><div className="assistant-suggestions">{SUGGESTIONS.map(k => <button key={k} className="chip" onClick={() => void send(t(k))}>{t(k)}</button>)}</div></div>}
       {history.map((m, i) => <div key={i} className={`bubble ${m.role}`}><div className="bubble-text" dir="auto">{m.content}</div>{m.role === 'assistant' && <div className="ai-actions"><CopyButton text={m.content}/><button className="button small-button" onClick={() => onDraft(m.content)}><PenLine size={14}/>{t('ai.to_editor')}</button></div>}</div>)}
@@ -245,7 +299,7 @@ export function AiSettingsPanel({onSaved}: {onSaved: (message: string) => void})
   useEffect(() => setForm(saved), [saved]);
   const p = provider(form.provider);
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
-  function pick(id: string) {const next = provider(id); setForm(f => ({...f, provider: id, baseUrl: next.baseUrl || f.baseUrl, model: next.model || f.model})); setModels([]); setStatus({});}
+  function pick(id: string) {const next = provider(id); setForm(f => ({...f, provider: id, baseUrl: next.baseUrl || f.baseUrl, model: next.model || f.model, visionModel: next.vision})); setModels([]); setStatus({});}
   async function loadModels() {
     setStatus({busy: 'models'});
     try {const list = await listModels(form); setModels(list); setStatus({});} catch (e) {setStatus({error: aiErrorText(e, t)});}
@@ -257,13 +311,14 @@ export function AiSettingsPanel({onSaved}: {onSaved: (message: string) => void})
       setStatus({ok: t('ai.set_test_ok', {answer: answer.trim().slice(0, 120)})});
     } catch (e) {setStatus({error: aiErrorText(e, t)});}
   }
-  return <form className="panel ai-settings" onSubmit={e => {e.preventDefault(); saveAiSettings({...form, baseUrl: form.baseUrl.trim(), apiKey: form.apiKey.trim(), model: form.model.trim()}); onSaved(t('ai.set_saved'));}}>
+  return <form className="panel ai-settings" onSubmit={e => {e.preventDefault(); saveAiSettings({...form, baseUrl: form.baseUrl.trim(), apiKey: form.apiKey.trim(), model: form.model.trim(), visionModel: form.visionModel.trim()}); onSaved(t('ai.set_saved'));}}>
     <div className="panel-heading"><div><div className="mini-eyebrow"><Sparkles size={13}/>AI</div><h2>{t('ai.set_title')}</h2><p>{t('ai.set_text')}</p></div></div>
     <div className="settings-section ai-grid">
       <label>{t('ai.set_provider')}<select value={form.provider} onChange={e => pick(e.target.value)}>{PROVIDERS.map(x => <option key={x.id} value={x.id}>{x.id === 'custom' ? t('ai.set_custom') : x.name}</option>)}</select></label>
       <label>{t('ai.set_base_url')}<input dir="ltr" inputMode="url" placeholder="https://api.example.com/v1" value={form.baseUrl} onChange={e => setForm({...form, baseUrl: e.target.value})}/></label>
       <label className="wide">{t('ai.set_key')}<span className="ai-key"><input dir="ltr" type={showKey ? 'text' : 'password'} autoComplete="off" placeholder={p.needsKey ? '' : t('ai.set_key_optional')} value={form.apiKey} onChange={e => setForm({...form, apiKey: e.target.value})}/><button type="button" className="icon-button" aria-label={showKey ? t('ai.set_hide_key') : t('ai.set_show_key')} onClick={() => setShowKey(v => !v)}>{showKey ? <EyeOff size={16}/> : <Eye size={16}/>}</button>{p.keyUrl && <button type="button" className="button small-button" onClick={() => openExternal(p.keyUrl)}><ExternalLink size={14}/>{t('ai.set_get_key')}</button>}</span><small>{t('ai.set_key_hint')}</small></label>
       <label className="wide">{t('ai.set_model')}<span className="ai-key"><input dir="ltr" list="ai-models" value={form.model} onChange={e => setForm({...form, model: e.target.value})}/><datalist id="ai-models">{models.map(m => <option key={m} value={m}/>)}</datalist><button type="button" className="button small-button" disabled={!!status.busy || !form.baseUrl.trim()} onClick={loadModels}>{status.busy === 'models' ? <LoaderCircle size={14} className="spin"/> : <RefreshCw size={14}/>}{t('ai.set_load_models')}</button></span>{models.length > 0 && <small>{tn('ai.set_models', models.length)}</small>}</label>
+      <label className="wide">{t('ai.set_vision')}<input dir="ltr" list="ai-models" placeholder={t('ai.set_vision_none')} value={form.visionModel} onChange={e => setForm({...form, visionModel: e.target.value})}/><small>{t('ai.set_vision_hint')}</small></label>
       <label className="wide">{t('ai.set_voice')}<textarea rows={3} placeholder={t('ai.set_voice_placeholder')} value={form.voice} onChange={e => setForm({...form, voice: e.target.value})}/><small>{t('ai.set_voice_hint')}</small></label>
       <label>{t('ai.set_lang')}<select value={form.contentLang} onChange={e => setForm({...form, contentLang: e.target.value})}><option value="">{t('ai.set_same_as_posts')}</option>{LANGS.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}</select></label>
     </div>
