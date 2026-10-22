@@ -275,7 +275,7 @@ export function compare(ctx: Context, tracked: TrackedSummary[]): ChatMessage[] 
 export function splitPicture(answer: string): {text: string; picture: string} {
   const lines = answer.trim().split('\n');
   const marked = lines.filter(l => l.trim().startsWith(PICTURE_MARK));
-  return {text: lines.filter(l => !l.trim().startsWith(PICTURE_MARK)).join('\n').trim(), picture: marked.map(l => l.trim().slice(PICTURE_MARK.length).replace(/^[\s:：-]+/, '').trim()).filter(Boolean).join('; ')};
+  return {text: lines.filter(l => !l.trim().startsWith(PICTURE_MARK)).join('\n').trim(), picture: marked.map(l => l.trim().slice(PICTURE_MARK.length).replace(/^[\s\uFE0F:：-]+/, '').trim()).filter(Boolean).join('; ')};
 }
 
 /** A title and body from an answer: the first short line becomes the title, or the picture it asks for. */

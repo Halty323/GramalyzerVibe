@@ -101,6 +101,8 @@ test('picture ideas come out of a draft and become its title', () => {
   assert.deepEqual(splitPicture('Пятница, котики!\n🖼 кот в коробке с пивом'), {text: 'Пятница, котики!', picture: 'кот в коробке с пивом'});
   assert.deepEqual(splitTitle('Пятница, котики!\n🖼: кот в коробке'), {title: '🖼 кот в коробке', body: 'Пятница, котики!'});
   assert.deepEqual(splitPicture('Just text'), {text: 'Just text', picture: ''});
+  // models often write the emoji with its variation selector
+  assert.deepEqual(splitPicture('Котики\n🖼\uFE0F кот'), {text: 'Котики', picture: 'кот'});
 });
 
 test('the pictures the model looks at: the two most engaging, then the newest, never forwards', () => {
