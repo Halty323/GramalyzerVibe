@@ -40,10 +40,16 @@ export type ChannelInsights = {
 };
 
 /** One message in the channel viewer. views is null when the source can't see them (the Bot API never reports views). */
+/**
+ * A photo, or a video's thumbnail, with its place in the album as Telegram lays it out: x and w from 0 to 1 of the
+ * album's width, y and h in the same unit (a square picture as wide as the album has h 1). All null when unknown.
+ */
+export type FeedMedia = {url: string; video: boolean; x: number | null; y: number | null; w: number | null; h: number | null};
 export type FeedPost = {
   id: string; messageId: number | null; postedAt: string; kind: string; text: string;
   views: number | null; reactions: number; reactionList: {emoji: string; count: number}[];
-  comments: number | null; mediaUrl: string | null; url: string | null; forwardedFrom: string | null;
+  /** mediaUrl: the first picture (also a link preview's or a sticker); media: every photo and video, empty when the source has no pictures. */
+  comments: number | null; mediaUrl: string | null; media?: FeedMedia[]; url: string | null; forwardedFrom: string | null;
   edited: boolean; status: 'published' | 'scheduled';
 };
 /** Statistics of a public channel, from the posts its t.me preview shows and the daily snapshots taken while tracked. */

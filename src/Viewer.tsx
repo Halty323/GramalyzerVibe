@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { AlignLeft, ArrowLeft, AtSign, BadgeCheck, CalendarClock, Clock3, ExternalLink, Eye, FileText, Film, Forward, Image, Images, Info, Link2, ListChecks, LoaderCircle, MessageCircle, Mic, Music, Plus, RefreshCw, Search, Smile, Sparkles, Telescope, TriangleAlert, Video, X, type LucideIcon } from 'lucide-react';
-import type { Channel, ChannelFeed, FeedPost, Post, TrackedDetail, TrackedStats, TrackedSummary, TrackingError } from '../shared/types';
+import { createPortal } from 'react-dom';
+import { AlignLeft, ArrowLeft, AtSign, BadgeCheck, CalendarClock, ChevronLeft, ChevronRight, Clock3, ExternalLink, Eye, FileText, Film, Forward, Image, Images, Info, Link2, ListChecks, LoaderCircle, MessageCircle, Mic, Music, Play, Plus, RefreshCw, Search, Smile, Sparkles, Telescope, TriangleAlert, Video, X, type LucideIcon } from 'lucide-react';
+import type { Channel, ChannelFeed, FeedMedia, FeedPost, Post, TrackedDetail, TrackedStats, TrackedSummary, TrackingError } from '../shared/types';
 import { api, channelPhoto, errorMessage, trackingError, usernameFrom } from './api';
 import { burst, burstFrom, ChannelAvatar, RichText, Sparkline } from './fun';
 import { isKey, useI18n, type StringKey } from './i18n';
@@ -221,12 +222,14 @@ function Bubble({post, order, flash, onTag, onEdit}: {post: FeedPost; order: num
   const text = long && !expanded ? post.text.slice(0, 560).trimEnd() + '…' : post.text;
   const Icon = KIND_ICONS[post.kind] ?? Sparkles;
   const media = post.mediaUrl || !['TEXT', 'OTHER'].includes(post.kind);
+  const pictures = picturesOf(post);
+  const [zoom, setZoom] = useState<number | null>(null);
   const reactions = post.reactionList.length ? post.reactionList : post.reactions ? [{emoji: '❤️', count: post.reactions}] : [];
   return <div id={`msg-${post.id}`} className={`tg-msg ${flash ? 'flash' : ''} ${post.status}`} style={{'--i': order} as CSSProperties}
     onDoubleClick={e => {if ((e.target as HTMLElement).closest('a,button')) return; burst(e.clientX, e.clientY, [reactions[0]?.emoji ?? '❤️'], 9);}}>
-    <div className={`tg-bubble ${onEdit ? 'editable' : ''}`} onClick={onEdit} role={onEdit ? 'button' : undefined} tabIndex={onEdit ? 0 : undefined} onKeyDown={onEdit ? e => {if (e.key === 'Enter') onEdit();} : undefined}>
+    <div className={`tg-bubble ${onEdit ? 'editable' : ''} ${pictures.length ? 'pictures' : ''} ${pictures.length && !text && !reactions.length && post.comments === null ? 'bare' : ''}`} onClick={onEdit} role={onEdit ? 'button' : undefined} tabIndex={onEdit ? 0 : undefined} onKeyDown={onEdit ? e => {if (e.key === 'Enter') onEdit();} : undefined}>
       {post.forwardedFrom && <div className="tg-fwd"><Forward size={13}/>{t('view.forwarded', {name: post.forwardedFrom})}</div>}
-      {media && (post.mediaUrl
+      {pictures.length > 0 ? <Pictures items={pictures} kind={post.kind} onOpen={setZoom}/> : media && (post.mediaUrl
         ? <div className="tg-media"><img src={post.mediaUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={e => {(e.currentTarget.parentElement as HTMLElement).classList.add('broken');}}/>{post.kind !== 'PHOTO' && <span className="tg-media-tag"><Icon size={13}/>{t(kindKey(post.kind))}</span>}</div>
         : <div className={`tg-media placeholder k-${post.kind}`} style={{'--h': (post.messageId ?? 0) * 47 % 360} as CSSProperties}><Icon size={28}/><span>{t(kindKey(post.kind))}</span></div>)}
       {text && <div className="tg-text" dir="auto"><RichText text={text} onTag={onTag}/>{long && <button className="tg-more" onClick={e => {e.stopPropagation(); setExpanded(v => !v);}}>{expanded ? t('view.show_less') : t('view.show_more')}</button>}</div>}
@@ -235,7 +238,104 @@ function Bubble({post, order, flash, onTag, onEdit}: {post: FeedPost; order: num
       {post.comments !== null && <div className="tg-comments"><MessageCircle size={15}/><span>{post.comments ? tn('view.comments', post.comments) : t('view.no_comments')}</span></div>}
     </div>
     {post.url && <a className="tg-side" href={post.url} target="_blank" rel="noreferrer" aria-label={t('view.open_post')} title={t('view.open_post')}><ExternalLink size={15}/></a>}
+    {zoom !== null && <Lightbox items={pictures} start={zoom} post={post} onClose={() => setZoom(null)}/>}
   </div>;
+}
+
+const SHOWN_AS_PICTURES = ['PHOTO', 'ALBUM', 'VIDEO', 'ANIMATION'];
+/** A post's photos and videos; a post stored before albums were read in full has its first picture only. */
+function picturesOf(post: FeedPost): FeedMedia[] {
+  if (post.media?.length) return post.media;
+  if (!post.mediaUrl || !SHOWN_AS_PICTURES.includes(post.kind)) return [];
+  return [{url: post.mediaUrl, video: post.kind === 'VIDEO' || post.kind === 'ANIMATION', x: null, y: null, w: null, h: null}];
+}
+
+const pct = (n: number) => `${n * 100}%`;
+
+/** One picture in its own shape, or an album in the mosaic Telegram gave it (a layout by count when it didn't). Each opens full size. */
+function Pictures({items, kind, onOpen}: {items: FeedMedia[]; kind: string; onOpen: (index: number) => void}) {
+  const {t} = useI18n();
+  const placed = items.length > 1 && items.every(m => m.x !== null && m.y !== null && m.w !== null && m.h !== null);
+  const height = placed ? Math.max(...items.map(m => m.y! + m.h!)) : items.length === 1 ? items[0].h : null;
+  const Icon = KIND_ICONS[kind] ?? Sparkles;
+  const layout = placed ? 'placed' : items.length >= 5 ? 'many' : `n-${items.length}`;
+  return <div className={`tg-pics ${layout}`} style={height ? {aspectRatio: `1 / ${height}`} : undefined}>
+    {items.map((m, i) => <button key={i} type="button" className="tg-pic" aria-label={t('view.zoom')}
+      style={placed ? {left: pct(m.x!), top: pct(m.y! / height!), width: pct(m.w!), height: pct(m.h! / height!)} : undefined}
+      onClick={e => {e.stopPropagation(); onOpen(i);}}>
+      <img src={m.url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={e => {(e.currentTarget.parentElement as HTMLElement).classList.add('broken');}}/>
+      {m.video && <span className="tg-play"><Play size={18} fill="currentColor"/></span>}
+    </button>)}
+    {items.length === 1 && kind === 'ANIMATION' && <span className="tg-media-tag"><Icon size={13}/>{t(kindKey(kind))}</span>}
+  </div>;
+}
+
+/** Pictures full size, like Telegram's media viewer: arrows, swipes or the side buttons go through an album; Esc or a click beside the picture closes. */
+function Lightbox({items, start, post, onClose}: {items: FeedMedia[]; start: number; post: FeedPost; onClose: () => void}) {
+  const {t, rtl} = useI18n();
+  const [index, setIndex] = useState(start);
+  const dialog = useRef<HTMLDivElement>(null);
+  const closer = useRef<HTMLButtonElement>(null);
+  const swipe = useRef<{from: number; moved: boolean}>({from: NaN, moved: false});
+  const many = items.length > 1;
+  const item = items[index];
+  const go = (step: number) => setIndex(i => (i + step + items.length) % items.length);
+
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    closer.current?.focus();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    // capturing, so the page's own shortcuts (Esc closes its dialogs) don't act as well
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (many && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) go((e.key === 'ArrowRight') !== rtl ? 1 : -1);
+      else if (e.key === 'Tab') {
+        const stops = [...dialog.current?.querySelectorAll<HTMLElement>('a[href],button') ?? []];
+        const at = stops.indexOf(document.activeElement as HTMLElement);
+        const next = stops[(at + (e.shiftKey ? -1 : 1) + stops.length) % stops.length];
+        next?.focus();
+      } else return;
+      e.preventDefault(); e.stopPropagation();
+    };
+    window.addEventListener('keydown', keys, true);
+    return () => {window.removeEventListener('keydown', keys, true); document.body.style.overflow = overflow; before?.focus();};
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the neighbours load while this one is looked at
+  useEffect(() => {
+    if (!many) return;
+    for (const step of [1, -1]) new window.Image().src = items[(index + step + items.length) % items.length].url;
+  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const caption = post.text.length > 320 ? post.text.slice(0, 300).trimEnd() + '…' : post.text;
+  return createPortal(<div ref={dialog} className="lightbox" role="dialog" aria-modal="true" aria-label={t('view.pictures')}
+    onClick={e => {
+      if (swipe.current.moved) {swipe.current.moved = false; return;} // the end of a swipe with the mouse
+      if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('lightbox-stage')) onClose();
+    }}
+    onDoubleClick={e => e.stopPropagation()} // React passes events out of a portal to the message, which bursts reactions on a double click
+    onPointerDown={e => {swipe.current = {from: e.clientX, moved: false};}}
+    onPointerUp={e => {
+      const dx = e.clientX - swipe.current.from;
+      swipe.current = {from: NaN, moved: Math.abs(dx) > 60};
+      if (many && swipe.current.moved) go((dx < 0) !== rtl ? 1 : -1);
+    }}>
+    <div className="lightbox-bar">
+      <span className="lightbox-count" aria-live="polite">{many ? t('view.picture_n', {n: index + 1, total: items.length}) : ''}</span>
+      {post.url && <a className="lightbox-button" href={post.url} target="_blank" rel="noreferrer" aria-label={t('view.open_post')} title={t('view.open_post')}><ExternalLink size={18}/></a>}
+      <button ref={closer} type="button" className="lightbox-button" aria-label={t('app.close_dialog')} title={t('app.close_dialog')} onClick={onClose}><X size={20}/></button>
+    </div>
+    <div className="lightbox-stage">
+      <img key={item.url} src={item.url} alt="" referrerPolicy="no-referrer" draggable={false}/>
+      {item.video && post.url && <a className="lightbox-play" href={post.url} target="_blank" rel="noreferrer"><Play size={18} fill="currentColor"/>{t('view.video_in_telegram')}</a>}
+    </div>
+    {many && <>
+      <button type="button" className="lightbox-nav prev" aria-label={t('view.prev_picture')} onClick={() => go(-1)}><ChevronLeft size={30}/></button>
+      <button type="button" className="lightbox-nav next" aria-label={t('view.next_picture')} onClick={() => go(1)}><ChevronRight size={30}/></button>
+    </>}
+    {caption && <p className="lightbox-caption" dir="auto">{caption}</p>}
+  </div>, document.body);
 }
 
 function ChatInfo({chat, acting, onClose, onJump, onTag, onTrack, onUntrack}: {chat: Chat; acting: boolean; onClose: () => void; onJump: (id: string) => void; onTag: (tag: string) => void; onTrack: (el: HTMLElement) => void; onUntrack: () => void}) {
