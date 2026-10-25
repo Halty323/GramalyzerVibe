@@ -190,3 +190,75 @@ test('for a channel of pictures, the AI looks at them first and drafts a caption
   expect(draft.messages[0].content).toContain('[1] photo, 900 reactions\n(no caption)');
   expect(asked).toHaveLength(2);
 });
+test('albums show every picture in Telegram’s layout, and pictures open full size', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const cdn = (name: string) => `https://cdn.example.test/${name}.png`;
+  const post = (id: number, kind: string, text: string, media: unknown[]) => ({id: `p${id}`, messageId: id, postedAt: new Date(Date.now() - (10 - id) * 3600_000).toISOString(), kind, text, views: 11, reactions: 0, reactionList: [], comments: null, mediaUrl: media.length ? (media[0] as {url: string}).url : null, media, url: `https://t.me/dispatch/${id}`, forwardedFrom: null, edited: false, status: 'published'});
+  const posts = [
+    post(1, 'ALBUM', 'Я так більше не можу', [
+      {url: cdn('cat'), video: false, x: 0, y: 0, w: 1, h: 0.6667},
+      {url: cdn('sponge'), video: false, x: 0, y: 0.6711, w: 0.4967, h: 0.4437},
+      {url: cdn('kitten'), video: true, x: 0.5011, y: 0.6711, w: 0.4989, h: 0.4437}]),
+    post(4, 'PHOTO', 'Just one', [{url: cdn('one'), video: false, x: 0, y: 0, w: 1, h: 0.75}]),
+    post(5, 'ALBUM', '', [{url: cdn('a'), video: false, x: null, y: null, w: null, h: null}, {url: cdn('b'), video: false, x: null, y: null, w: null, h: null}]),
+  ];
+  await page.route(/\/api\/channels\/[^/]+\/feed/, route => route.fulfill({json: {channelId: 'x', source: 'preview', posts, scheduled: [], stats: null}}));
+  await page.route('https://cdn.example.test/**', route => route.fulfill({contentType: 'image/png', body: pixel}));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.locator('nav').getByRole('button', {name: 'Channel viewer'}).click();
+  await page.locator('.tg-chat', {hasText: 'Design Dispatch'}).click();
+
+  const album = page.locator('.tg-msg', {hasText: 'Я так більше не можу'}).locator('.tg-pics');
+  await expect(album).toHaveClass(/placed/);
+  const tiles = album.locator('.tg-pic');
+  await expect(tiles).toHaveCount(3);
+  await page.waitForTimeout(800); // messages slide in
+  const [box, top, left, right] = (await Promise.all([album, tiles.nth(0), tiles.nth(1), tiles.nth(2)].map(l => l.boundingBox()))).map(b => b!);
+  const near = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThan(2);
+  near(top.width, box.width);                                       // the first across the top
+  near(left.y, right.y);                                            // the other two side by side below it
+  expect(left.y).toBeGreaterThan(top.y + top.height - 1);
+  expect(right.x).toBeGreaterThan(left.x + left.width - 1);
+  expect(box.height / box.width).toBeCloseTo(1.115, 1);             // the album keeps Telegram's shape
+  // no caption: the time sits on the pictures, as in Telegram
+  await expect(page.locator('.tg-bubble.bare .tg-meta')).toHaveCSS('position', 'absolute');
+  await expect(tiles.nth(2).locator('.tg-play')).toBeVisible();     // a video
+  await expect(page.locator('.tg-msg', {hasText: 'Just one'}).locator('.tg-pic')).toHaveCount(1);
+  await expect(page.locator('.tg-pics.n-2 .tg-pic')).toHaveCount(2); // no layout from Telegram: two side by side
+
+  await tiles.nth(1).click();
+  const viewer = page.getByRole('dialog', {name: 'Photos and videos'});
+  await expect(viewer).toBeVisible();
+  await expect(viewer.locator('.lightbox-count')).toHaveText('2 of 3');
+  await expect(viewer.locator('.lightbox-stage img')).toHaveAttribute('src', cdn('sponge'));
+  await expect(viewer.locator('.lightbox-caption')).toHaveText('Я так більше не можу');
+  await page.keyboard.press('ArrowRight');
+  await expect(viewer.locator('.lightbox-count')).toHaveText('3 of 3');
+  await expect(viewer.getByRole('link', {name: 'Play in Telegram'})).toHaveAttribute('href', 'https://t.me/dispatch/1');
+  await page.keyboard.press('ArrowRight');
+  await expect(viewer.locator('.lightbox-count')).toHaveText('1 of 3');
+  await viewer.getByRole('button', {name: 'Previous'}).click();
+  await expect(viewer.locator('.lightbox-stage img')).toHaveAttribute('src', cdn('kitten'));
+  await page.keyboard.press('Escape');
+  await expect(viewer).toBeHidden();
+  await expect(tiles.nth(1)).toBeFocused();                         // back where the reader was
+
+  await page.locator('.tg-msg', {hasText: 'Just one'}).locator('.tg-pic').click();
+  await expect(viewer.locator('.lightbox-stage img')).toHaveAttribute('src', cdn('one'));
+  await expect(viewer.getByRole('button', {name: 'Next'})).toHaveCount(0);
+  await viewer.locator('.lightbox-stage').click({position: {x: 5, y: 5}}); // beside the picture
+  await expect(viewer).toBeHidden();
+
+  // on a phone: swipe through the album
+  await page.setViewportSize({width: 390, height: 844});
+  await page.getByRole('button', {name: 'Close channel info'}).click();
+  await tiles.nth(0).click();
+  await expect(viewer.locator('.lightbox-count')).toHaveText('1 of 3');
+  const stage = (await viewer.locator('.lightbox-stage').boundingBox())!;
+  await page.mouse.move(stage.x + stage.width * 0.8, stage.y + stage.height / 2); await page.mouse.down();
+  await page.mouse.move(stage.x + stage.width * 0.2, stage.y + stage.height / 2); await page.mouse.up();
+  await expect(viewer.locator('.lightbox-count')).toHaveText('2 of 3');
+  await expect(viewer).toBeVisible();
+  expect(errors).toEqual([]);
+});
