@@ -63,6 +63,17 @@ export function Viewer({channels, posts, tracked, demo, selected, onSelect, onTr
     return () => {live = false;};
   }, [selKey, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // An open channel of yours picks up new posts by itself; the server reads Telegram again once its copy is two minutes old.
+  useEffect(() => {
+    if (!selected || selected.kind !== 'mine') return;
+    const key = keyOf(selected), id = selected.id;
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      api.feed(id).then(feed => {cache.current.set(key, {feed}); setLoaded(l => l?.key === key ? {key, feed} : l);}).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [selKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const watching = (username: string) => tracked?.some(s => s.username.toLowerCase() === username.toLowerCase()) ?? false;
   const chat = useMemo<Chat | null>(() => {
     if (!selected || !loaded || loaded.key !== selKey) return null;
@@ -109,7 +120,9 @@ export function Viewer({channels, posts, tracked, demo, selected, onSelect, onTr
   const list = chat ? (mode === 'posts' ? chat.posts : chat.scheduled) : [];
   const needle = query.trim().toLowerCase();
   const shown = list.filter(p => !needle || p.text.toLowerCase().includes(needle)).sort((a, b) => time(a.postedAt) - time(b.postedAt));
-  useLayoutEffect(() => {const el = scroller.current; if (el) el.scrollTop = el.scrollHeight;}, [chat?.key, mode, needle, loaded]);
+  // to the newest message when it changes, not when a refresh only brings new view counts
+  const newest = shown.at(-1)?.id;
+  useLayoutEffect(() => {const el = scroller.current; if (el) el.scrollTop = el.scrollHeight;}, [chat?.key, mode, needle, newest]);
   useEffect(() => {
     if (!flash) return;
     document.getElementById(`msg-${flash}`)?.scrollIntoView({block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});

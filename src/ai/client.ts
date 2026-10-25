@@ -2,6 +2,8 @@ import { httpFetch } from '../platform';
 import type { AiSettings } from './settings';
 
 export type ChatMessage = {role: 'system' | 'user' | 'assistant'; content: string};
+/** A message with pictures, for models that can see them (OpenAI's image_url parts; a URL or a data: URL). */
+export type VisionMessage = {role: 'user'; content: ({type: 'text'; text: string} | {type: 'image_url'; image_url: {url: string}})[]};
 
 /**
  * Why a request to the AI provider failed. kind picks the translated explanation; detail is what the provider said,
@@ -66,7 +68,7 @@ export function readEvents(buffer: string): {text: string; done: boolean; rest: 
 }
 
 /** Streams a chat completion, calling onText with each new piece; resolves with the whole answer. */
-export async function streamChat(s: AiSettings, messages: ChatMessage[], temperature: number, onText: (piece: string) => void, signal?: AbortSignal): Promise<string> {
+export async function streamChat(s: AiSettings, messages: (ChatMessage | VisionMessage)[], temperature: number, onText: (piece: string) => void, signal?: AbortSignal): Promise<string> {
   const res = await send(`${base(s)}/chat/completions`, {method: 'POST', headers: headers(s), signal, body: JSON.stringify({model: s.model.trim(), messages, stream: true, temperature})});
   if (!res.body) throw new AiError('empty');
   const reader = res.body.getReader();
@@ -92,7 +94,7 @@ export async function streamChat(s: AiSettings, messages: ChatMessage[], tempera
 }
 
 /** The whole answer at once, for actions that parse it (the planner). */
-export const complete = (s: AiSettings, messages: ChatMessage[], temperature: number, signal?: AbortSignal) => streamChat(s, messages, temperature, () => undefined, signal);
+export const complete = (s: AiSettings, messages: (ChatMessage | VisionMessage)[], temperature: number, signal?: AbortSignal) => streamChat(s, messages, temperature, () => undefined, signal);
 
 /** The model ids the endpoint offers (GET /models), to pick from in settings. */
 export async function listModels(s: AiSettings): Promise<string[]> {
@@ -102,16 +104,16 @@ export async function listModels(s: AiSettings): Promise<string[]> {
   return [...new Set(list.map(m => m.id?.replace(/^models\//, '')).filter((id): id is string => !!id))].sort();
 }
 
-/** One post the planner suggests. */
-export type PlannedPost = {title: string; body: string; category: string};
-/** The JSON list in a planner answer, even inside a ```json fence or after a preface; posts without text are dropped. */
+/** One post the planner suggests; picture is what to attach, for channels of pictures. */
+export type PlannedPost = {title: string; body: string; category: string; picture: string};
+/** The JSON list in a planner answer, even inside a ```json fence or after a preface; empty posts are dropped. */
 export function parsePlan(answer: string): PlannedPost[] {
   const start = answer.indexOf('['), end = answer.lastIndexOf(']');
   if (start < 0 || end <= start) throw new AiError('plan');
   let raw: unknown;
   try {raw = JSON.parse(answer.slice(start, end + 1));} catch (e) {throw new AiError('plan', e instanceof Error ? e.message : '');}
   if (!Array.isArray(raw)) throw new AiError('plan');
-  const posts = raw.map(p => ({title: String(p?.title ?? ''), body: String(p?.body ?? ''), category: String(p?.category ?? '')})).filter(p => p.body.trim());
+  const posts = raw.map(p => ({title: String(p?.title ?? ''), body: String(p?.body ?? ''), category: String(p?.category ?? ''), picture: String(p?.picture ?? '')})).filter(p => p.body.trim() || p.picture.trim());
   if (!posts.length) throw new AiError('plan');
   return posts;
 }

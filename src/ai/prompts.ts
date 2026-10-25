@@ -14,6 +14,8 @@ export type Context = {
   /** The channel's own published posts as Telegram has them, newest first. */
   feed: FeedPost[];
   voice: string;
+  /** What the channel's pictures show, as a vision model described them; null when nobody looked. */
+  look?: string | null;
   language: string;
   /** No language was chosen for drafts: write in the language of the channel's posts, `language` without any. */
   languageFromPosts: boolean;
@@ -33,9 +35,24 @@ const FIT = "Everything you write must fit this channel: its subject and audienc
   + "Write posts the way the channel's own posts are written: similar length, structure, emoji and hashtag habits, and voice. "
   + "Reuse the channel's hashtags rather than inventing new ones.";
 
-/** How many of the channel's posts go into a prompt as examples, and how much of each. */
-const EXAMPLES = 6;
+/** How many of the channel's posts go into a prompt as examples, how much of each, and of all of them together. */
+const EXAMPLES = 10;
 const EXAMPLE_CHARS = 600;
+const EXAMPLE_BUDGET = 3600;
+
+const KIND_NAMES: Record<string, string> = {TEXT: 'text', PHOTO: 'photo', ALBUM: 'album', VIDEO: 'video', ANIMATION: 'GIF', VIDEO_NOTE: 'video message', STICKER: 'sticker', VOICE: 'voice message', AUDIO: 'audio', DOCUMENT: 'file', POLL: 'poll'};
+const kindName = (kind: string) => KIND_NAMES[kind] ?? 'other';
+/** Posts that are mainly something to look at: a photo, an album, a video, a GIF or a sticker. */
+export const isPicture = (p: FeedPost) => ['PHOTO', 'ALBUM', 'VIDEO', 'ANIMATION', 'VIDEO_NOTE', 'STICKER'].includes(p.kind);
+/** The channel's own posts: forwards are someone else's style, and an empty text post says nothing. */
+export const ownPosts = (feed: FeedPost[]) => feed.filter(p => !p.forwardedFrom && (p.text.trim() || p.kind !== 'TEXT'));
+/** The share of the channel's posts that are pictures, 0 to 1. */
+export function pictureShare(feed: FeedPost[]): number {
+  const own = ownPosts(feed);
+  return own.length ? own.filter(isPicture).length / own.length : 0;
+}
+/** Picture channels: most posts are pictures with a short caption or none. */
+const isPictureChannel = (ctx: Context) => ownPosts(ctx.feed).length >= 3 && pictureShare(ctx.feed) >= 0.5;
 
 const dayName = (day: string) => day.charAt(0) + day.slice(1).toLowerCase();
 const chars = (s: string) => Array.from(s);
@@ -55,16 +72,47 @@ export function hashtags(text: string): string[] {
   return text.split(/\s+/).filter(w => w.startsWith('#')).map(w => w.slice(1).replace(/[^\p{L}\p{N}_]+$/u, '')).filter(t => /^\p{L}/u.test(t)).map(t => `#${t.toLowerCase()}`);
 }
 
-/** The channel's own posts that are worth imitating: the most engaging ones first, then the newest. */
+/**
+ * The channel's own posts that are worth imitating: the most engaging ones first, then the newest. Picture posts
+ * count too, with whatever caption they have: in a channel of pictures they are the style to learn.
+ */
 function examples(feed: FeedPost[]): FeedPost[] {
-  const own = feed.filter(p => !p.forwardedFrom && chars(p.text.trim()).length >= 20);
+  const own = ownPosts(feed);
   const opening = (p: FeedPost) => (p.text.trim().split('\n')[0] ?? '').trim().toLowerCase();
   const out: FeedPost[] = [];
+  let budget = EXAMPLE_BUDGET;
   // Recurring formats (a weekly digest, say) would otherwise fill every slot with the same opening.
-  const add = (p: FeedPost) => {if (!out.some(q => q.id === p.id || opening(q) === opening(p))) out.push(p);};
+  const add = (p: FeedPost) => {
+    const o = opening(p), cost = Math.min(chars(p.text.trim()).length, EXAMPLE_CHARS) + 30;
+    if (out.some(q => q.id === p.id || (o && opening(q) === o)) || (out.length >= 3 && cost > budget)) return;
+    out.push(p); budget -= cost;
+  };
   for (const p of [...own].sort((a, b) => b.reactions - a.reactions)) {if (out.length >= EXAMPLES / 2) break; add(p);}
   for (const p of own) {if (out.length >= EXAMPLES) break; add(p);}
   return out;
+}
+
+/** What the channel posts, in numbers: formats, and for pictures how long their captions are. */
+function contentMix(feed: FeedPost[]): string | null {
+  const own = ownPosts(feed);
+  if (own.length < 3) return null;
+  const counts = new Map<string, number>();
+  for (const p of own) counts.set(kindName(p.kind), (counts.get(kindName(p.kind)) ?? 0) + 1);
+  const pct = (n: number, of = own.length) => Math.round(n * 100 / of);
+  let line = `Formats of the last ${own.length} posts: ${[...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, n]) => `${k} ${pct(n)}%`).join(', ')}.`;
+  const pictures = own.filter(isPicture);
+  if (pictures.length) {
+    const captions = pictures.map(p => chars(p.text.trim()).length).filter(n => n > 0).sort((a, b) => a - b);
+    line += ` Of the picture posts, ${pct(pictures.length - captions.length, pictures.length)}% have no caption`;
+    line += captions.length ? `; captions are typically about ${captions[Math.floor(captions.length / 2)]} characters.` : '.';
+  }
+  return line;
+}
+
+/** One post as an example: what it is, how it did, and its text. */
+function example(p: FeedPost, n: number): string[] {
+  const text = p.text.trim();
+  return [`[${n}] ${kindName(p.kind)}, ${p.reactions} reactions`, text ? clip(text, EXAMPLE_CHARS) : '(no caption)', ''];
 }
 
 /** Habits the posts share, in numbers: length, emoji, hashtags, links. */
@@ -94,7 +142,7 @@ export function describe(ctx: Context): string {
     const mine = ctx.posts.filter(p => p.channelId === c.id).sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
     if (shown.length) {
       lines.push('', 'Posts from this channel, to learn its subject, voice and formatting (the most engaging first, then the newest):');
-      shown.forEach((p, i) => lines.push(`[${i + 1}] ${p.reactions} reactions`, clip(p.text, EXAMPLE_CHARS), ''));
+      shown.forEach((p, i) => lines.push(...example(p, i + 1)));
     } else {
       // Nothing from Telegram yet: the posts written in the workspace are the next best thing.
       const published = mine.filter(p => p.status === 'published').slice(0, EXAMPLES);
@@ -103,8 +151,11 @@ export function describe(ctx: Context): string {
         published.forEach((p, i) => lines.push(`[${i + 1}] ${p.title}`, clip(p.body, EXAMPLE_CHARS), ''));
       }
     }
+    const mix = contentMix(ctx.feed);
+    if (mix) lines.push(mix);
     const style = houseStyle(ctx.feed);
     if (style) lines.push(style);
+    if (ctx.look?.trim()) lines.push('', 'What the channel\'s pictures show (from looking at recent ones):', ctx.look.trim(), '');
     const planned = mine.filter(p => p.status !== 'published').map(p => p.title.trim()).filter(Boolean).slice(0, 8);
     if (planned.length) lines.push(`Already drafted or scheduled (do not repeat): ${planned.join('; ')}`);
   }
@@ -128,21 +179,32 @@ export function describe(ctx: Context): string {
   return lines.join('\n') + '\n';
 }
 
+const PICTURES = "Most of this channel's posts are pictures with a short caption or none: the picture carries the post. "
+  + 'Gramalyzer sends only the text, so write what goes with a picture: as short as the channel\'s captions, in their voice, '
+  + 'about the kind of thing its pictures show. Never turn that into a long text post the channel would not publish.';
+
 function system(ctx: Context, extra: string): ChatMessage {
   const c = ctx.channel;
   const hasPosts = ctx.feed.length > 0 || !!c && ctx.posts.some(p => p.channelId === c.id && p.status === 'published');
   const language = ctx.languageFromPosts && hasPosts
     ? "Write in the language the channel's posts are written in, unless asked otherwise."
     : `Write in ${ctx.language} unless asked otherwise.`;
-  return {role: 'system', content: `${ROLE}\n\n${describe(ctx)}\n${c ? FIT : ''}\n${language}\n${extra}`};
+  const fit = c ? (isPictureChannel(ctx) ? `${FIT}\n${PICTURES}` : FIT) : '';
+  return {role: 'system', content: `${ROLE}\n\n${describe(ctx)}\n${fit}\n${language}\n${extra}`};
 }
 
 export const TONES = ['friendly', 'expert', 'bold', 'playful', 'formal', 'inspiring'] as const;
 
+/** Marks the line where a draft for a picture channel says what picture to attach. */
+export const PICTURE_MARK = '🖼';
+
 export function rewrite(ctx: Context, kind: Rewrite, input: {title: string; body: string; brief: string; tone: string; target: string}): ChatMessage[] {
   const only = 'Answer with the post text only: no preface, no quotes around it, no explanation.';
+  const draft = isPictureChannel(ctx)
+    ? `Write a new post for this channel from the brief below: the caption, as short as the channel's captions and in their voice, then on a last line starting with "${PICTURE_MARK} " what picture to attach, in a few words. No preface, no quotes, no explanation.`
+    : `Write a new Telegram post for this channel from the brief below, on the channel's subject and in the style of its posts. Open with a strong first line (it is what shows in the chat list), keep paragraphs short, end with a natural call to action or question. ${only}`;
   const tasks: Record<Rewrite, string> = {
-    draft: `Write a new Telegram post for this channel from the brief below, on the channel's subject and in the style of its posts. Open with a strong first line (it is what shows in the chat list), keep paragraphs short, end with a natural call to action or question. ${only}\n\nBrief: ${input.brief}`,
+    draft: `${draft}\n\nBrief: ${input.brief}`,
     improve: `Edit this post to make it clearer, tighter and more engaging, keeping its meaning, facts and language. ${only}`,
     shorten: `Cut this post to about half its length without losing the key point. ${only}`,
     expand: `Expand this post with useful specifics, an example or a short list, staying under 1500 characters. ${only}`,
@@ -159,11 +221,15 @@ export function rewrite(ctx: Context, kind: Rewrite, input: {title: string; body
 
 export function plan(ctx: Context, count: number, brief: string): ChatMessage[] {
   const focus = brief.trim() || "what this channel's audience follows it for. Mix useful posts, a story or behind-the-scenes and a question to the audience, all on the channel's own subject.";
+  const pictures = isPictureChannel(ctx);
   return [
     system(ctx, "You plan content calendars. Base ideas on the channel's subject and on what the analytics show working; vary formats; never repeat a recent post."),
     {role: 'user', content: `Plan the next ${count} posts for this channel. Focus: ${focus}\n`
-      + "Every post must be on the channel's subject and read like its own posts. Write each post in full, ready to publish. Return ONLY a JSON array, no prose, like:\n"
-      + '[{"title": "short internal title", "category": "one or two words", "body": "the full post text"}]'},
+      + (pictures
+        ? "Every post must be on the channel's subject and look like its own posts: a picture and its caption. Write each caption in full, as short as the channel's. Return ONLY a JSON array, no prose, like:\n"
+          + '[{"title": "short internal title", "picture": "what the picture should show", "category": "one or two words", "body": "the caption"}]'
+        : "Every post must be on the channel's subject and read like its own posts. Write each post in full, ready to publish. Return ONLY a JSON array, no prose, like:\n"
+          + '[{"title": "short internal title", "category": "one or two words", "body": "the full post text"}]')},
   ];
 }
 
@@ -183,13 +249,14 @@ export function assistant(ctx: Context, tracked: TrackedSummary[], history: Chat
   const c = ctx.channel;
   const scheduled = c ? ctx.posts.filter(p => p.channelId === c.id && p.status === 'scheduled').map(p => `- ${when(p.scheduledAt)} ${p.title}`) : [];
   const queue = scheduled.length ? `Queue:\n${scheduled.join('\n')}` : 'Queue: nothing scheduled.';
-  return [system(ctx, `${watch}${queue}\nYou are a helpful assistant in a chat. When you write a post, put it in full, ready to paste.`), ...history.slice(-16)];
+  const pictures = isPictureChannel(ctx) ? ` This channel posts pictures: when you suggest a post, write its caption and say what picture goes with it on a separate line starting with "${PICTURE_MARK} ".` : '';
+  return [system(ctx, `${watch}${queue}\nYou are a helpful assistant in a chat. When you write a post, put it in full, ready to paste.${pictures}`), ...history.slice(-16)];
 }
 
 export function teardown(ctx: Context, title: string, posts: FeedPost[], stats: TrackedStats | null): ChatMessage[] {
   let s = `Channel to analyse: ${title}\n`;
   if (stats) s += `Subscribers ${opt(stats.subscribers)}, avg views ${opt(stats.avgViews, 1)}, ER ${opt(stats.er, 1)}%, posts/day ${opt(stats.postsPerDay, 1)}\n`;
-  s += 'Recent posts (views, reactions):\n' + posts.slice(0, 20).map(p => `- [${p.views ?? '?'} views, ${p.reactions} reactions] ${chars(p.text).slice(0, 220).join('').replace(/\n/g, ' ')}`).join('\n') + '\n';
+  s += 'Recent posts (format, views, reactions):\n' + posts.slice(0, 20).map(p => `- [${kindName(p.kind)}, ${p.views ?? '?'} views, ${p.reactions} reactions] ${chars(p.text).slice(0, 220).join('').replace(/\n/g, ' ') || '(no caption)'}`).join('\n') + '\n';
   return [
     system(ctx, 'You analyse other Telegram channels so the user can learn from them.'),
     {role: 'user', content: `${s}\nBreak down this channel: what topics and formats get the most views and reactions, how they write openings, posting rhythm, and 3 concrete ideas my channel could adapt (not copy). Under 300 words, plain text with short numbered sections.`},
@@ -204,9 +271,16 @@ export function compare(ctx: Context, tracked: TrackedSummary[]): ChatMessage[] 
   ];
 }
 
-/** A title and body from an answer: the first short line becomes the title. */
+/** A draft and the picture it asks for: the lines marked 🖼 come out of the text. */
+export function splitPicture(answer: string): {text: string; picture: string} {
+  const lines = answer.trim().split('\n');
+  const marked = lines.filter(l => l.trim().startsWith(PICTURE_MARK));
+  return {text: lines.filter(l => !l.trim().startsWith(PICTURE_MARK)).join('\n').trim(), picture: marked.map(l => l.trim().slice(PICTURE_MARK.length).replace(/^[\s\uFE0F:：-]+/, '').trim()).filter(Boolean).join('; ')};
+}
+
+/** A title and body from an answer: the first short line becomes the title, or the picture it asks for. */
 export function splitTitle(answer: string): {title: string; body: string} {
-  const body = answer.trim();
-  const first = (body.split('\n').map(l => l.trim()).find(Boolean) ?? '').replace(/[*#"]/g, '');
-  return {title: chars(first.trim()).slice(0, 70).join(''), body};
+  const {text, picture} = splitPicture(answer);
+  const first = (text.split('\n').map(l => l.trim()).find(Boolean) ?? '').replace(/[*#"]/g, '');
+  return {title: chars(picture ? `${PICTURE_MARK} ${picture}` : first.trim()).slice(0, 70).join(''), body: text};
 }

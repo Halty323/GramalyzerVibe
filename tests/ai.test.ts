@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Channel, FeedPost } from '../shared/types.js';
 import { AiError, parsePlan, readEvents } from '../src/ai/client.js';
-import { clip, describe, hashtags, plan, rewrite, splitTitle, type Context } from '../src/ai/prompts.js';
+import { picturesOf } from '../src/ai/look.js';
+import { assistant, clip, describe, hashtags, plan, rewrite, splitPicture, splitTitle, type Context } from '../src/ai/prompts.js';
 import { normalizeServer } from '../src/platform.js';
 
 const event = (content: string) => `data: ${JSON.stringify({choices: [{delta: {content}}]})}\n`;
@@ -20,9 +21,9 @@ test('server-sent events: an error in the stream ends it with the provider’s m
   assert.deepEqual([r.text, r.done, r.error], ['Hi', true, 'quota exceeded']);
 });
 
-test('planner answers: JSON inside a fence or after a preface; posts without text dropped', () => {
-  const answer = 'Here is your plan:\n```json\n[{"title":"Monday","category":"Tips","body":"Five tips"},{"title":"Empty","body":"  "}]\n```';
-  assert.deepEqual(parsePlan(answer), [{title: 'Monday', category: 'Tips', body: 'Five tips'}]);
+test('planner answers: JSON inside a fence or after a preface; empty posts dropped, picture-only ones kept', () => {
+  const answer = 'Here is your plan:\n```json\n[{"title":"Monday","category":"Tips","body":"Five tips"},{"title":"Empty","body":"  "},{"title":"Cat","picture":"a cat in a box","body":""}]\n```';
+  assert.deepEqual(parsePlan(answer), [{title: 'Monday', category: 'Tips', body: 'Five tips', picture: ''}, {title: 'Cat', category: '', body: '', picture: 'a cat in a box'}]);
   assert.throws(() => parsePlan('Sorry, I cannot help.'), (e: unknown) => e instanceof AiError && e.kind === 'plan');
   assert.throws(() => parsePlan('[{"title":"x","body":""}]'), (e: unknown) => e instanceof AiError && e.kind === 'plan');
 });
@@ -70,4 +71,41 @@ test('rewrites send the post, drafts send the brief', () => {
   assert.doesNotMatch(draft.content, /ignored/);
   const [, shorten] = rewrite(context(), 'shorten', {title: 'Soup', body: 'A long post', brief: '', tone: 'friendly', target: 'English'});
   assert.match(shorten.content, /Title: Soup\n\nPost:\nA long post/);
+});
+
+const picture = (id: string, text: string, reactions: number, kind = 'PHOTO'): FeedPost => ({...post(id, text, reactions), kind, mediaUrl: `https://cdn.example/${id}.jpg`});
+const memes = [picture('m1', '', 900), picture('m2', 'когда пятница', 700), picture('m3', '', 300), picture('m4', 'мем дня', 200, 'ALBUM'), post('t1', 'Канал о мемах про котов, без политики', 50), picture('m5', '', 100, 'VIDEO')];
+
+test('picture posts reach the prompt: format, caption or its absence, and the channel’s mix', () => {
+  const text = describe(context({feed: memes}));
+  assert.match(text, /\[1\] photo, 900 reactions\n\(no caption\)/);
+  assert.match(text, /photo, 700 reactions\nкогда пятница/);
+  assert.match(text, /Formats of the last 6 posts: photo 50%, album 17%, text 17%, video 17%\./);
+  assert.match(text, /Of the picture posts, 60% have no caption; captions are typically about 13 characters\./);
+});
+
+test('picture channels: short captions, and the picture to attach, in drafts, plans and chat', () => {
+  const ctx = context({feed: memes, look: '- cats in boxes, reaction memes\n- Russian text on the images'});
+  const [system, draft] = rewrite(ctx, 'draft', {title: '', body: '', brief: 'monday', tone: 'friendly', target: 'English'});
+  assert.match(system.content, /Most of this channel's posts are pictures/);
+  assert.match(system.content, /What the channel's pictures show \(from looking at recent ones\):\n- cats in boxes/);
+  assert.match(draft.content, /last line starting with "🖼 "/);
+  assert.match(plan(ctx, 3, '')[1].content, /"picture": "what the picture should show"/);
+  assert.match(assistant(ctx, [], [])[0].content, /say what picture goes with it/);
+  // a text channel gets none of that
+  const words = context({feed: [post('1', 'A long article about pasta and sauces', 5), post('2', 'Another long read about risotto', 4), post('3', 'Gnocchi by hand, step by step', 3)]});
+  assert.doesNotMatch(rewrite(words, 'draft', {title: '', body: '', brief: 'x', tone: 'friendly', target: 'English'})[0].content, /Most of this channel's posts are pictures/);
+});
+
+test('picture ideas come out of a draft and become its title', () => {
+  assert.deepEqual(splitPicture('Пятница, котики!\n🖼 кот в коробке с пивом'), {text: 'Пятница, котики!', picture: 'кот в коробке с пивом'});
+  assert.deepEqual(splitTitle('Пятница, котики!\n🖼: кот в коробке'), {title: '🖼 кот в коробке', body: 'Пятница, котики!'});
+  assert.deepEqual(splitPicture('Just text'), {text: 'Just text', picture: ''});
+  // models often write the emoji with its variation selector
+  assert.deepEqual(splitPicture('Котики\n🖼\uFE0F кот'), {text: 'Котики', picture: 'кот'});
+});
+
+test('the pictures the model looks at: the two most engaging, then the newest, never forwards', () => {
+  const feed = [...memes, {...picture('f1', '', 5000), forwardedFrom: 'Other channel'}];
+  assert.deepEqual(picturesOf(feed).map(p => p.id), ['m1', 'm2', 'm3', 'm4']);
 });

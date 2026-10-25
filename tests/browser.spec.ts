@@ -155,3 +155,38 @@ test('the AI copilot drafts a post for the channel, and asks for a provider unti
   expect(sent.messages[1].content).toContain('Brief: autumn in the city');
   await page.evaluate(() => localStorage.removeItem('gramalyzer.ai'));
 });
+test('for a channel of pictures, the AI looks at them first and drafts a caption with the picture to attach', async ({page}) => {
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const post = (id: number, kind: string, text: string, reactions: number) => ({id: `p${id}`, messageId: id, postedAt: new Date(Date.now() - id * 3600_000).toISOString(), kind, text, views: 1000, reactions, reactionList: [], comments: null, mediaUrl: kind === 'TEXT' ? null : `https://cdn.example.test/${id}.jpg`, url: null, forwardedFrom: null, edited: false, status: 'published'});
+  const posts = [post(1, 'PHOTO', '', 900), post(2, 'PHOTO', 'коли п’ятниця', 700), post(3, 'PHOTO', '', 300), post(4, 'ALBUM', 'мем дня', 200), post(5, 'VIDEO', '', 100), post(6, 'TEXT', 'Канал мемів про котів', 50)];
+  await page.route(/\/api\/channels\/[^/]+\/feed/, route => route.fulfill({json: {channelId: 'x', source: 'preview', posts, scheduled: [], stats: null}}));
+  await page.route('https://cdn.example.test/**', route => route.fulfill({contentType: 'image/png', headers: {'Access-Control-Allow-Origin': '*'}, body: pixel}));
+  const asked: {model: string; messages: {role: string; content: unknown}[]}[] = [];
+  const sse = (text: string) => `data: ${JSON.stringify({choices: [{delta: {content: text}}]})}\n\ndata: [DONE]\n\n`;
+  await page.route('https://ai.example.test/v1/chat/completions', async route => {
+    const body = JSON.parse(route.request().postData() ?? '{}'); asked.push(body);
+    const sees = JSON.stringify(body.messages).includes('image_url');
+    await route.fulfill({contentType: 'text/event-stream', headers: {'Access-Control-Allow-Origin': '*'}, body: sse(sees ? '- cats in cardboard boxes\n- Ukrainian captions on the images' : 'П’ятниця, котики!\n🖼 кіт у коробці')});
+  });
+  await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('gramalyzer.ai', JSON.stringify({provider: 'custom', baseUrl: 'https://ai.example.test/v1', apiKey: 'k', model: 'text-model', visionModel: 'vision-model', voice: '', contentLang: ''})));
+  await page.reload();
+  await page.getByRole('button', {name: 'New post', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.ai-knows summary')).toHaveText('Read 6 posts · 5 with pictures · pictures described');
+  await dialog.locator('.ai-knows summary').click();
+  await expect(dialog.locator('.ai-knows-body')).toContainText('cats in cardboard boxes');
+  await dialog.getByLabel('Brief', {exact: true}).fill('friday');
+  await dialog.getByRole('button', {name: 'Draft with AI'}).click();
+  await dialog.getByRole('button', {name: 'Replace text'}).click();
+  await expect(dialog.getByLabel('Message', {exact: true})).toHaveValue('П’ятниця, котики!');
+  await expect(dialog.getByLabel('Post title')).toHaveValue('🖼 кіт у коробці');
+  const [look, draft] = asked;
+  expect(look.model).toBe('vision-model');
+  const parts = look.messages[0].content as {type: string; image_url?: {url: string}}[];
+  expect(parts.filter(p => p.type === 'image_url').map(p => p.image_url!.url.slice(0, 23))).toEqual(Array(4).fill('data:image/jpeg;base64,'));
+  expect(draft.model).toBe('text-model');
+  expect(draft.messages[0].content).toContain('- cats in cardboard boxes');
+  expect(draft.messages[0].content).toContain('[1] photo, 900 reactions\n(no caption)');
+  expect(asked).toHaveLength(2);
+});

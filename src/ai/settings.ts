@@ -4,14 +4,19 @@ import { provider } from './providers';
 /**
  * The AI setup, kept on this device only (the app's private storage, or this browser's): which provider, the key,
  * the model, and how the channel should sound. contentLang is a language code, or '' for the channel's own language.
+ * visionModel looks at the channel's pictures; '' skips that.
  */
-export type AiSettings = {provider: string; baseUrl: string; apiKey: string; model: string; voice: string; contentLang: string};
+export type AiSettings = {provider: string; baseUrl: string; apiKey: string; model: string; visionModel: string; voice: string; contentLang: string};
 
 const STORAGE = 'gramalyzer.ai';
-const DEFAULTS: AiSettings = {provider: 'groq', baseUrl: provider('groq').baseUrl, apiKey: '', model: provider('groq').model, voice: '', contentLang: ''};
+const DEFAULTS: AiSettings = {provider: 'groq', baseUrl: provider('groq').baseUrl, apiKey: '', model: provider('groq').model, visionModel: provider('groq').vision, voice: '', contentLang: ''};
 
 function read(): AiSettings {
-  try {return {...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE) ?? '{}')};} catch {return DEFAULTS;}
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE) ?? '{}') as Partial<AiSettings>;
+    // Saved before there was a model for pictures: take the one the saved provider offers.
+    return {...DEFAULTS, visionModel: provider(saved.provider ?? DEFAULTS.provider).vision, ...saved};
+  } catch {return DEFAULTS;}
 }
 let current = typeof localStorage === 'undefined' ? DEFAULTS : read();
 const listeners = new Set<() => void>();
