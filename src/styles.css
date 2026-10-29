@@ -71,6 +71,27 @@
 .growth-stats small{display:flex;align-items:center;gap:5px;font-size:9px;color:light-dark(#8b8495,#9c95a6)}
 .growth-stats strong{font-size:20px;font-weight:600;letter-spacing:-.5px}
 .growth-stats .up{color:light-dark(#2d74b0,#6aa9e3)}.growth-stats .down{color:light-dark(#b5552a,#e08a4a)}
+.speed-usual{grid-template-columns:repeat(3,minmax(0,1fr))}
+.speed-note{font-size:11px;line-height:1.6;color:light-dark(#6f6a7b,#ada8bb);margin:0 24px 12px}
+.speed-list{list-style:none;margin:0;padding:0 24px;display:flex;flex-direction:column;gap:8px}
+.speed-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) auto auto;align-items:center;gap:14px;padding:10px 12px;border-radius:9px;background:light-dark(#faf9fc,#211f26);border-inline-start:3px solid transparent}
+.speed-row.lag{border-inline-start-color:light-dark(#b5552a,#e08a4a)}.speed-row.fast{border-inline-start-color:light-dark(#2d74b0,#6aa9e3)}
+.speed-what{display:flex;flex-direction:column;gap:3px;min-width:0}
+.speed-what strong{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.speed-what small{font-size:10px;color:light-dark(#8b8495,#9c95a6)}
+.speed-marks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.speed-mark{display:flex;flex-direction:column;gap:3px;min-width:0}
+.speed-mark small{font-size:9px;color:light-dark(#8b8495,#9c95a6)}
+.speed-mark b{font-size:11px;font-weight:600}
+.speed-bar{position:relative;display:block;height:5px;border-radius:3px;background:light-dark(#ebe8f0,#2e2b35);overflow:hidden}
+.speed-bar>span{position:absolute;inset-block:0;inset-inline-start:0;border-radius:3px;background:light-dark(#7a6fa0,#a59bd0)}
+.speed-bar>i{position:absolute;inset-block:0;inset-inline-start:50%;width:1px;background:light-dark(#6f6a7b,#ada8bb)}
+.speed-row.lag .speed-bar>span{background:light-dark(#b5552a,#e08a4a)}.speed-row.fast .speed-bar>span{background:light-dark(#2d74b0,#6aa9e3)}
+.speed-status{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:10px;font-weight:600;padding:4px 9px;border-radius:999px;background:light-dark(#efedf3,#2a2730);color:light-dark(#5d5868,#c3bed0);white-space:nowrap}
+.speed-status small{font-size:9px;font-weight:400;opacity:.8}
+.speed-status.lag{background:light-dark(#f8e7de,#3a261c);color:light-dark(#b5552a,#e08a4a)}
+.speed-status.fast{background:light-dark(#e1edf8,#1c2a3a);color:light-dark(#2d74b0,#6aa9e3)}
+.speed-foot{margin:14px 24px 0}
 .growth-chart{padding:0 24px}
 .growth-legend{display:flex;align-items:center;gap:14px;font-size:9px;color:light-dark(#6f6a7b,#ada8bb);margin-bottom:8px}
 .growth-legend span,.growth-tip span{display:inline-flex;align-items:center;gap:5px}
@@ -159,7 +180,7 @@ i.joined{background:var(--joined)}i.left{background:var(--left)}
 .cp-actions:empty{display:none}
 .cp-card .button{min-height:34px;padding:0 12px;font-size:10px;align-self:flex-start}
 @media(max-width:760px){.cp-profile{margin:0 17px 6px}.cp-form{grid-template-columns:minmax(0,1fr);padding:0 17px 12px}.cp-block{padding:6px 17px 0}.cp-list{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:760px){.growth-effects .ins-posts{padding:0 17px}.growth-effects h3,.growth-effects>.ins-muted{margin-inline:17px}.growth-stats{grid-template-columns:repeat(2,minmax(0,1fr));padding:0 17px 14px}.growth-chart,.promo-scroll{padding:0 17px}.growth-posts{grid-template-columns:minmax(0,1fr);gap:4px}.growth-bars{height:110px}.promo-form{padding:0 17px 12px}.growth-panel .panel-heading{flex-wrap:wrap}}
+@media(max-width:760px){.speed-list{padding:0 17px}.speed-note{margin-inline:17px}.speed-foot{margin-inline:17px}.growth-stats.speed-usual{gap:8px;grid-template-columns:repeat(3,minmax(0,1fr))}.speed-row{grid-template-columns:minmax(0,1fr) auto auto;gap:10px}.speed-marks{grid-column:1/-1;grid-row:2}.growth-effects .ins-posts{padding:0 17px}.growth-effects h3,.growth-effects>.ins-muted{margin-inline:17px}.growth-stats{grid-template-columns:repeat(2,minmax(0,1fr));padding:0 17px 14px}.growth-chart,.promo-scroll{padding:0 17px}.growth-posts{grid-template-columns:minmax(0,1fr);gap:4px}.growth-bars{height:110px}.promo-form{padding:0 17px 12px}.growth-panel .panel-heading{flex-wrap:wrap}}
 @media(max-width:1000px){.ins-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){.ins-slots,.ins-suggestions,.ins-posts,.ins-heat-scroll{padding:0 17px}.ins-group{padding:4px 17px 10px}.ins-note{margin:12px 17px 0}.ins-progress{margin:4px 17px 0}.ins-bar{grid-template-columns:minmax(70px,110px) minmax(0,1fr) 34px}}
 

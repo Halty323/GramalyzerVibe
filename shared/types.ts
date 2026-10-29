@@ -110,3 +110,11 @@ export type SwapView = {
   createdAt: string; respondedAt: string | null; mine: PromoLinkStat | null; theirs: PromoLinkStat | null;
 };
 export type CrossPromo = {connected: boolean; profile: SwapProfile | null; topics: string[]; languages: string[]; matches: SwapMatch[]; swaps: SwapView[]};
+/** GET /api/channels/:id/views – how fast an own channel's posts gather views (public channels only: views come from the web preview). */
+export type ViewPace = {h1: number | null; h6: number | null; h24: number | null};
+/** status: early (under an hour old), lag, fast, normal, or unknown (no reading yet). ratio: views at the latest mark over the usual. */
+export type PostSpeed = {
+  messageId: number; postedAt: string; kind: string; preview: string; url: string | null; views: number | null;
+  h1: number | null; h6: number | null; h24: number | null; status: 'early' | 'lag' | 'fast' | 'normal' | 'unknown'; ratio: number | null;
+};
+export type ViewSpeed = {connected: boolean; available: boolean; usual: ViewPace; posts: PostSpeed[]};
