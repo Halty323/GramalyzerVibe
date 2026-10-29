@@ -288,6 +288,20 @@ test('insights show who joined and left after which post, and promo links can be
   await expect(row).toContainText('revoked');
   expect(errors).toEqual([]);
 });
+test('insights show how fast posts get views and flag the one that lags', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.getByLabel('Filter channel').selectOption('makers');
+  await page.locator('nav').getByRole('button', {name: 'Insights'}).click();
+  const speed = page.getByRole('region', {name: 'How fast your posts get views'});
+  await expect(speed.getByText('Usually after 1 hour')).toBeVisible();
+  await expect(speed.locator('.speed-row').first()).toBeVisible();
+  await expect(speed.locator('.speed-row').first().locator('.speed-status')).toContainText('Behind');
+  await page.setViewportSize({width: 390, height: 844});
+  await expect(speed.locator('.speed-row').first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
 test('a queued post can carry pictures, link buttons, and be sent silently and pinned', async ({page}) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
