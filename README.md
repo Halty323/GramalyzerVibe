@@ -105,7 +105,7 @@ The API and domain code live in `GramalyzerBot/src/main/java/com/halty/gramalyze
 | `POST /api/login` | Exchange the workspace token for an HttpOnly session |
 | `GET /api/workspace` | Channels, posts, observed subscriber history, delivery configuration |
 | `PATCH /api/channels/:id` | Partial update of editable settings |
-| `POST /api/posts` | Create a draft or future scheduled text post |
+| `POST /api/posts` | Create a draft or future scheduled post: text, plus up to 10 pictures or videos (`media`), link buttons (`buttons`), `silent` and `pin` |
 | `PATCH /api/posts/:id` | Replace editable post fields; requires the full post input |
 | `DELETE /api/posts/:id` | Remove an unsent post |
 | `GET /api/channels/:id/feed?tz=` | One of your channels for the viewer: posts (from its public page when it has one, otherwise what the bot collected or Gramalyzer sent), the scheduled queue, and stats when known (`ChannelFeed`) |
@@ -116,10 +116,16 @@ The API and domain code live in `GramalyzerBot/src/main/java/com/halty/gramalyze
 | `POST /api/tracked/:username/refresh` | Fetch it again now |
 | `DELETE /api/tracked/:username` | Remove it from the watchlist |
 | `GET /api/channels/:id/insights` | The bot's analysis for one channel: best times, upcoming good slots, weekly heatmap, what content resonates, top posts (`ChannelInsights` in `shared/types.ts`). `status` is `ready`, `learning` (under 20 usable posts) or `not_connected`. Demo channels get sample analytics. |
+| `GET /api/channels/:id/growth?days=30` | Who joined and left an own channel per day, the posts that brought or lost the most people, and promo links with who stayed and the cost per subscriber (`ChannelGrowth`). Shown on Insights. |
+| `POST /api/channels/:id/promo-links` / `DELETE …/:linkId` | Make a named invite link for one promo (`{name, cost, currency}`), or revoke it. |
+| `GET /api/channels/:id/cross-promo` | Cross-promo: the channel's profile, partners that fit (same language, close topic, similar size) and swaps with what each side's post brought (`CrossPromo`). Shown on Insights. |
+| `PUT /api/channels/:id/cross-promo/profile` | `{topic, language, pitch, enabled}` |
+| `POST /api/channels/:id/cross-promo/swaps` / `POST …/swaps/:swapId/(accept\|decline\|cancel\|end)` | Ask a partner to swap posts (`{partner}`), or answer, take back or end a swap. Accepting gives both channels a promo link. |
+| `POST /api/media?name=` / `GET /api/media/:id` | Upload a picture, GIF or video for a post (raw body with its `Content-Type`), or fetch it |
 
 Outside demo mode, requests require a browser session or `Authorization: Bearer <GRAMALYZER_API_TOKEN>`. Sessions last eight hours and reset when Spring restarts. This is a single administrative workspace with a shared access token; individual Telegram sign-in and channel-scoped moderator roles remain future work.
 
-The worker atomically claims due posts, honors paused queues, appends channel signatures, and records Telegram message IDs. It disables network-level automatic retries. Definite rejections can be corrected and rescheduled; timeouts, interrupted deliveries, and uncertain server errors are held for manual review to avoid blind duplicate sends. Only run one active bot/worker instance during this initial rollout. It supports text posts; media attachments are not yet implemented.
+The worker atomically claims due posts, honors paused queues, appends channel signatures, and records Telegram message IDs. It disables network-level automatic retries. Definite rejections can be corrected and rescheduled; timeouts, interrupted deliveries, and uncertain server errors are held for manual review to avoid blind duplicate sends. Only run one active bot/worker instance during this initial rollout. It sends text, a picture, video or GIF with a caption, or an album of 2–10 pictures and videos, with optional link buttons (not on albums, a Telegram limit), silently and pinned if asked.
 
 ## Live configuration
 
