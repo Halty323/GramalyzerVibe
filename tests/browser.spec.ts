@@ -277,13 +277,80 @@ test('insights show who joined and left after which post, and promo links can be
 
   const promos = page.getByRole('region', {name: 'Know which promo brought subscribers'});
   await expect(promos.getByText('Shoutout in a partner channel')).toBeVisible();
-  await promos.getByLabel('Promo name').fill('Browser test promo');
+  const name = `Browser test ${Date.now() % 100000}`; // the demo database outlives a run, so each run makes its own link
+  await promos.getByLabel('Promo name').fill(name);
   await promos.getByLabel('What you paid (optional)').fill('12');
   await promos.getByRole('button', {name: 'Make a link'}).click();
-  const row = promos.getByRole('row', {name: /Browser test promo/});
+  const row = promos.getByRole('row', {name: new RegExp(name)});
   await expect(row).toContainText('t.me/+demo');
   page.once('dialog', dialog => dialog.accept());
-  await row.getByRole('button', {name: 'Revoke the link for Browser test promo'}).click();
+  await row.getByRole('button', {name: `Revoke the link for ${name}`}).click();
   await expect(row).toContainText('revoked');
+  expect(errors).toEqual([]);
+});
+test('a queued post can carry pictures, link buttons, and be sent silently and pinned', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.getByRole('button', {name: 'New post', exact: true}).click();
+  await page.getByLabel('Post title').fill('Browser test: picture post');
+  await page.getByLabel('Message', {exact: true}).fill('A post with a picture and a button.');
+  // a 1×1 PNG
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await page.getByLabel('Add pictures or video').setInputFiles([{name: 'one.png', mimeType: 'image/png', buffer: png}, {name: 'two.png', mimeType: 'image/png', buffer: png}]);
+  await expect(page.locator('.media-thumb img')).toHaveCount(2);
+  await expect(page.getByText('Album · 2')).toBeVisible();
+  await page.getByRole('button', {name: 'Add a button'}).click();
+  await page.getByLabel('Button label').fill('Read more');
+  await page.getByLabel('Link', {exact: true}).fill('https://example.com');
+  await page.getByRole('button', {name: 'Save draft', exact: true}).click();
+  await expect(page.getByRole('alert')).toContainText('buttons under an album');
+  await page.getByRole('button', {name: 'Remove two.png'}).click();
+  await page.getByLabel('Send without sound').check();
+  await page.getByLabel('Pin after sending').check();
+  await page.getByRole('button', {name: 'Save draft', exact: true}).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+
+  const saved = (await (await page.request.get('/api/workspace')).json()).posts.find((p: {title: string}) => p.title === 'Browser test: picture post');
+  expect(saved.media).toHaveLength(1);
+  expect(saved.buttons).toEqual([{text: 'Read more', url: 'https://example.com'}]);
+  expect(saved.silent && saved.pin).toBe(true);
+  await page.request.delete(`/api/posts/${saved.id}`);
+  expect(errors).toEqual([]);
+});
+test('cross-promo finds partner channels, and swaps can be accepted and asked for with tracked links', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.getByLabel('Filter channel').selectOption('makers');
+  await page.locator('nav').getByRole('button', {name: 'Insights'}).click();
+  const cp = page.getByRole('region', {name: 'Swap posts with channels like yours'});
+  await expect(cp.getByText('Partners that fit')).toBeVisible();
+
+  const running = cp.locator('.cp-card', {hasText: 'Code & Coffee'});
+  await expect(running.getByText('Running')).toBeVisible();
+  await expect(running.getByText(/Their post brought you \d+/)).toBeVisible();
+
+  // the sample request from AI Weekly is there on a fresh demo; answering it is for good, so a rerun finds it answered
+  const asking = cp.locator('.cp-card', {hasText: 'Wants to swap'});
+  if (await asking.count()) {
+    const who = (await asking.first().locator('strong').first().textContent())!;
+    await asking.first().getByRole('button', {name: 'Accept'}).click();
+    await expect(cp.locator('.cp-card', {hasText: who}).getByText('Running')).toBeVisible();
+  }
+
+  // sample partners say yes straight away; ending the swap puts them back among the matches for the next run
+  const match = cp.locator('.cp-block').last().locator('.cp-card').first();
+  const partner = (await match.locator('strong').first().textContent())!;
+  await match.getByRole('button', {name: 'Ask to swap'}).click();
+  const swap = cp.locator('.cp-block').first().locator('.cp-card', {hasText: partner}).filter({hasText: 'Running'});
+  await expect(swap.getByText('Their link, for you to post')).toBeVisible();
+  page.once('dialog', dialog => dialog.accept());
+  await swap.getByRole('button', {name: 'End swap'}).click();
+  await expect(cp.locator('.cp-block').first().locator('.cp-card', {hasText: partner}).getByText('Over').first()).toBeVisible();
+
+  await cp.getByRole('button', {name: 'Edit'}).click();
+  const pitch = `Maker projects every morning, ${Date.now()}.`;
+  await cp.getByLabel('About your channel').fill(pitch);
+  await cp.getByRole('button', {name: 'Save'}).click();
+  await expect(cp.getByText(pitch)).toBeVisible();
   expect(errors).toEqual([]);
 });

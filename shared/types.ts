@@ -11,7 +11,12 @@ export type Post = {
   views: number; reactions: number; shares: number; category: string;
   deliveryState?: 'pending' | 'sending' | 'sent' | 'failed' | 'uncertain';
   telegramMessageId?: number | null; deliveryError?: string | null;
+  /** Up to 10 uploaded files (2+ go out as an album), link buttons (not on albums), sent without sound, pinned once sent. */
+  media?: MediaRef[]; buttons?: LinkButton[]; silent?: boolean; pin?: boolean;
 };
+/** POST /api/media – an uploaded picture, video or GIF; GET /api/media/:id serves it. */
+export type MediaRef = {id: string; kind: 'photo' | 'video' | 'animation'; name: string};
+export type LinkButton = {text: string; url: string};
 export type Workspace = { channels: Channel[]; posts: Post[]; demo: boolean; botEnabled: boolean; history: {channelId: string; date: string; subscribers: number}[] };
 
 /** GET /api/channels/:id/insights – what the bot's analysis says about one channel. "lift" multiplies the channel's typical engagement (1 = typical). */
@@ -93,3 +98,15 @@ export type ChannelGrowth = {
   connected: boolean; tracking: boolean; since: string | null; days: number; joined: number; left: number; net: number; fromLinks: number;
   daily: GrowthDay[]; gainers: PostEffect[]; losers: PostEffect[]; links: PromoLinkStat[];
 };
+/** GET /api/channels/:id/cross-promo – a channel's cross-promo profile, partners that fit and swaps. profile is null until it joins. */
+export type SwapProfile = {topic: string; language: string; pitch: string | null; enabled: boolean};
+/** A possible partner; score is 0–100. Its username and owner stay hidden until a swap is accepted. */
+export type SwapMatch = {channelId: number; title: string; topic: string; language: string; pitch: string | null; subscribers: number | null; engagement: number | null; score: number};
+export type SwapStatus = 'REQUESTED' | 'ACTIVE' | 'DECLINED' | 'CANCELLED' | 'DONE';
+/** A swap from this channel's side: mine is the link here that the partner posts, theirs the partner's link that this channel posts. */
+export type SwapView = {
+  id: number; status: SwapStatus; outgoing: boolean; partnerId: number; partnerTitle: string; partnerTopic: string | null;
+  partnerSubscribers: number | null; partnerPitch: string | null; partnerUrl: string | null; partnerContact: string | null;
+  createdAt: string; respondedAt: string | null; mine: PromoLinkStat | null; theirs: PromoLinkStat | null;
+};
+export type CrossPromo = {connected: boolean; profile: SwapProfile | null; topics: string[]; languages: string[]; matches: SwapMatch[]; swaps: SwapView[]};
