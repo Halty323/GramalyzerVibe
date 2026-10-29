@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Channel, ChannelFeed, ChannelInsights, TrackedDetail, TrackedSummary, TrackingError } from '../shared/types';
+import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, PromoLinkStat, TrackedDetail, TrackedSummary, TrackingError } from '../shared/types';
 import type { I18n } from './i18n';
 import { apiUrl, authHeaders, httpFetch, isApp } from './platform';
 
@@ -37,6 +37,9 @@ const tz = () => `tz=${encodeURIComponent(zone())}`;
 
 export const api = {
   insights: (id: string) => request<ChannelInsights>(`/channels/${encodeURIComponent(id)}/insights`),
+  growth: (id: string, days: number) => request<ChannelGrowth>(`/channels/${encodeURIComponent(id)}/growth?days=${days}`),
+  createPromoLink: (id: string, link: {name: string; cost: number | null; currency: string | null}) => request<PromoLinkStat>(`/channels/${encodeURIComponent(id)}/promo-links`, {method: 'POST', body: JSON.stringify(link)}),
+  revokePromoLink: (id: string, linkId: number) => request<PromoLinkStat>(`/channels/${encodeURIComponent(id)}/promo-links/${linkId}`, {method: 'DELETE'}),
   feed: (id: string) => request<ChannelFeed>(`/channels/${encodeURIComponent(id)}/feed?${tz()}`),
   tracked: () => request<TrackedSummary[]>(`/tracked?${tz()}`),
   lookup: (username: string) => request<TrackedDetail>(`/tracked/${encodeURIComponent(username)}?${tz()}`),

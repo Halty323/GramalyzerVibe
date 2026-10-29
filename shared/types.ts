@@ -79,3 +79,17 @@ export type TrackedSummary = {
 export type TrackedDetail = {channel: TrackedSummary; counters: {photos?: number; videos?: number; files?: number; links?: number}; stats: TrackedStats; top: FeedPost[]; posts: FeedPost[]};
 /** The "code" of an /api/tracked error response. */
 export type TrackingError = 'invalid_username' | 'private_link' | 'not_found' | 'not_channel' | 'unreachable' | 'limit' | 'not_tracked';
+/** GET /api/channels/:id/growth – who joined and left an own channel, after which post, and through which promo link. */
+export type GrowthDay = {date: string; joined: number; left: number};
+/** What happened while a post was the newest (up to 24 h, hours long); joins through promo links aren't counted here. */
+export type PostEffect = {messageId: number; postedAt: string; kind: string; preview: string; joined: number; left: number; hours: number; url: string | null};
+/** An invite link made for one promo, over its whole life. stayed: joined through it and haven't left. */
+export type PromoLinkStat = {
+  id: number; name: string; url: string; cost: number | null; currency: string | null; createdAt: string; revoked: boolean;
+  joined: number; left: number; stayed: number; costPerSubscriber: number | null;
+};
+/** tracking is false until the bot has seen a first join or leave; since is when that was. */
+export type ChannelGrowth = {
+  connected: boolean; tracking: boolean; since: string | null; days: number; joined: number; left: number; net: number; fromLinks: number;
+  daily: GrowthDay[]; gainers: PostEffect[]; losers: PostEffect[]; links: PromoLinkStat[];
+};

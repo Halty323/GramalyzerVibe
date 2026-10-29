@@ -262,3 +262,28 @@ test('albums show every picture in Telegram’s layout, and pictures open full s
   await expect(viewer).toBeVisible();
   expect(errors).toEqual([]);
 });
+test('insights show who joined and left after which post, and promo links can be made and revoked', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.getByLabel('Filter channel').selectOption('makers');
+  await page.locator('nav').getByRole('button', {name: 'Insights'}).click();
+  const growth = page.getByRole('region', {name: 'Who joins and who leaves'});
+  await expect(growth.getByText('Posts that brought people')).toBeVisible();
+  await expect(growth.locator('.growth-day').first()).toBeVisible();
+  await growth.getByRole('button', {name: 'Show table'}).click();
+  await expect(growth.getByRole('columnheader', {name: 'Day'})).toBeVisible();
+  await growth.getByRole('button', {name: '7d'}).click();
+  await expect(growth.getByRole('button', {name: '7d'})).toHaveAttribute('aria-pressed', 'true');
+
+  const promos = page.getByRole('region', {name: 'Know which promo brought subscribers'});
+  await expect(promos.getByText('Shoutout in a partner channel')).toBeVisible();
+  await promos.getByLabel('Promo name').fill('Browser test promo');
+  await promos.getByLabel('What you paid (optional)').fill('12');
+  await promos.getByRole('button', {name: 'Make a link'}).click();
+  const row = promos.getByRole('row', {name: /Browser test promo/});
+  await expect(row).toContainText('t.me/+demo');
+  page.once('dialog', dialog => dialog.accept());
+  await row.getByRole('button', {name: 'Revoke the link for Browser test promo'}).click();
+  await expect(row).toContainText('revoked');
+  expect(errors).toEqual([]);
+});

@@ -116,6 +116,8 @@ The API and domain code live in `GramalyzerBot/src/main/java/com/halty/gramalyze
 | `POST /api/tracked/:username/refresh` | Fetch it again now |
 | `DELETE /api/tracked/:username` | Remove it from the watchlist |
 | `GET /api/channels/:id/insights` | The bot's analysis for one channel: best times, upcoming good slots, weekly heatmap, what content resonates, top posts (`ChannelInsights` in `shared/types.ts`). `status` is `ready`, `learning` (under 20 usable posts) or `not_connected`. Demo channels get sample analytics. |
+| `GET /api/channels/:id/growth?days=30` | Who joined and left an own channel per day, the posts that brought or lost the most people, and promo links with who stayed and the cost per subscriber (`ChannelGrowth`). Shown on Insights. |
+| `POST /api/channels/:id/promo-links` / `DELETE …/:linkId` | Make a named invite link for one promo (`{name, cost, currency}`), or revoke it. |
 
 Outside demo mode, requests require a browser session or `Authorization: Bearer <GRAMALYZER_API_TOKEN>`. Sessions last eight hours and reset when Spring restarts. This is a single administrative workspace with a shared access token; individual Telegram sign-in and channel-scoped moderator roles remain future work.
 

@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { CalendarDays, ChartNoAxesCombined, Clock3, ExternalLink, FlaskConical, LoaderCircle, Radio, Sparkles, TrendingUp } from 'lucide-react';
 import type { Channel, ChannelInsights, InsightGroup, Weekday } from '../shared/types';
 import { errorMessage } from './api';
+import { GrowthSection } from './Growth';
 import { isKey, useI18n, type I18n } from './i18n';
 
 const DAYS: Weekday[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
@@ -40,7 +41,7 @@ export function InsightsPage({channel, showingFirst, fetchInsights, onPlan}: {ch
   if (error) return <>{scope}<div className="error-banner" role="alert">{errorMessage(error, t)}</div></>;
   if (!data) return <>{scope}<section className="panel ins-empty"><LoaderCircle className="spin"/><p>{t('ins.reading', {name: channel.name})}</p></section></>;
   if (data.status === 'not_connected') return <>{scope}<section className="notice connect-notice"><Radio size={20}/><div><strong>{t('ins.nc_title', {name: channel.name})}</strong><p>{t('ins.nc_text')}</p></div></section></>;
-  if (data.status === 'learning') return <>{scope}<section className="panel ins-learning"><div className="panel-heading"><div><div className="mini-eyebrow"><Sparkles size={13}/>{t('ins.learning')}</div><h2>{tn('ins.learning_title', data.postsNeeded)}</h2><p>{[tn('ins.usable', data.counts.eligible), data.counts.immature ? tn('ins.immature', data.counts.immature) : '', data.counts.excluded ? tn('ins.excluded', data.counts.excluded) : ''].filter(Boolean).join(' · ')}.</p></div></div><div className="ins-progress" role="progressbar" aria-valuemin={0} aria-valuemax={20} aria-valuenow={data.counts.eligible}><span style={{width: `${Math.min(100, data.counts.eligible / (data.counts.eligible + data.postsNeeded) * 100)}%`}}/></div></section></>;
+  if (data.status === 'learning') return <>{scope}<section className="panel ins-learning"><div className="panel-heading"><div><div className="mini-eyebrow"><Sparkles size={13}/>{t('ins.learning')}</div><h2>{tn('ins.learning_title', data.postsNeeded)}</h2><p>{[tn('ins.usable', data.counts.eligible), data.counts.immature ? tn('ins.immature', data.counts.immature) : '', data.counts.excluded ? tn('ins.excluded', data.counts.excluded) : ''].filter(Boolean).join(' · ')}.</p></div></div><div className="ins-progress" role="progressbar" aria-valuemin={0} aria-valuemax={20} aria-valuenow={data.counts.eligible}><span style={{width: `${Math.min(100, data.counts.eligible / (data.counts.eligible + data.postsNeeded) * 100)}%`}}/></div></section><GrowthSection channel={channel}/></>;
 
   const maxCell = Math.max(1, ...data.heatmap.lift.flat());
   const winners = data.content.topics.filter(g => g.lift >= 1.1).slice(0, 3);
@@ -58,6 +59,7 @@ export function InsightsPage({channel, showingFirst, fetchInsights, onPlan}: {ch
         <ul className="ins-suggestions">{data.suggestions.slice(0, 4).map(s => <li key={s.at}><span><strong>{when(s.at)}</strong><small>{t('ins.your_time', {lift: lift(s.lift, i18n)})}</small></span><button className="button" onClick={() => onPlan(s.at)}>{t('ins.plan')}</button></li>)}</ul>
       </section>
     </div>
+    <GrowthSection channel={channel}/>
     <section className="panel ins-heat">
       <div className="panel-heading"><div><h2>{t('ins.heatmap')} <span className="subtle-badge">{tn('ins.posts', data.counts.eligible)}</span></h2><p>{t('ins.heatmap_text')}</p></div></div>
       <div className="ins-heat-scroll"><table className="ins-heatmap" aria-label={t('ins.heatmap_aria')}><thead><tr><th/>{Array.from({length: 24}, (_, h) => <th key={h} scope="col">{h % 3 === 0 ? String(h).padStart(2, '0') : ''}</th>)}</tr></thead><tbody>{DAYS.map((d, di) => <tr key={d} style={{'--row': di} as CSSProperties}><th scope="row">{dayShort(d)}</th>{data.heatmap.lift[di].map((v, h) => <td key={h} title={`${dayName(d)} ${hourRange(h)}: ${lift(v, i18n)} · ${tn('ins.posts', data.heatmap.posts[di][h])}`} style={{opacity: 0.12 + 0.88 * Math.max(0, Math.min(1, (v - 0.5) / (maxCell - 0.5)))}}/>)}</tr>)}</tbody></table></div>
