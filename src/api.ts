@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed } from '../shared/types';
+import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed, CompetitorGaps, SearchCheck } from '../shared/types';
 import type { I18n } from './i18n';
 import { apiUrl, authHeaders, httpFetch, isApp } from './platform';
 
@@ -42,6 +42,8 @@ export const api = {
   /** The file itself is the body; the backend keeps it until a post uses it (a day otherwise). */
   upload: (file: File) => request<MediaRef>(`/media?name=${encodeURIComponent(file.name)}`, {method: 'POST', body: file, headers: {'Content-Type': file.type || 'application/octet-stream'}}),
   viewSpeed: (id: string) => request<ViewSpeed>(`/channels/${encodeURIComponent(id)}/views`),
+  gaps: (id: string) => request<CompetitorGaps>(`/channels/${encodeURIComponent(id)}/gaps`),
+  searchCheck: (id: string) => request<SearchCheck>(`/channels/${encodeURIComponent(id)}/search-check`),
   crossPromo: (id: string) => request<CrossPromo>(`/channels/${encodeURIComponent(id)}/cross-promo`),
   saveSwapProfile: (id: string, profile: SwapProfile) => request<SwapProfile>(`/channels/${encodeURIComponent(id)}/cross-promo/profile`, {method: 'PUT', body: JSON.stringify(profile)}),
   proposeSwap: (id: string, partner: number) => request<SwapView>(`/channels/${encodeURIComponent(id)}/cross-promo/swaps`, {method: 'POST', body: JSON.stringify({partner})}),

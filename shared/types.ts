@@ -118,3 +118,24 @@ export type PostSpeed = {
   h1: number | null; h6: number | null; h24: number | null; status: 'early' | 'lag' | 'fast' | 'normal' | 'unknown'; ratio: number | null;
 };
 export type ViewSpeed = {connected: boolean; available: boolean; usual: ViewPace; posts: PostSpeed[]};
+/** Where watched channels win and an own channel doesn't. Lifts are against each channel's own median post (1.0 = typical). */
+export type GapDimension = 'FORMAT' | 'HOURS' | 'LENGTH' | 'TOPIC';
+export type CompetitorGap = {
+  dimension: GapDimension; key: string; missing: boolean; theirLift: number; yourLift: number | null; theirShare: number; yourShare: number;
+  theirPosts: number; yourPosts: number; channels: number; example: {channel: string; preview: string; url: string | null; lift: number} | null;
+};
+export type GapRival = {username: string; title: string; subscribers: number | null; avgViews: number | null; er: number | null; postsPerDay: number | null; topFormat: string | null; posts: number};
+export type GapReport = {
+  status: 'no_competitors' | 'learning' | 'ready'; measure: 'VIEWS' | 'ENGAGEMENT';
+  you: {title: string; subscribers: number | null; postsPerDay: number | null; topFormat: string | null; posts: number};
+  rivals: GapRival[]; gaps: CompetitorGap[]; edges: CompetitorGap[]; theirPosts: number; yourPosts: number;
+};
+export type CompetitorGaps = {connected: boolean; report: GapReport | null};
+/** How findable a channel is in Telegram's search. Check ids match the sc.check.* translation keys. */
+export type SearchCheckStatus = 'OK' | 'WARN' | 'BAD';
+export type SearchCheck = {
+  score: number; grade: 'good' | 'fair' | 'poor';
+  checks: {id: string; status: SearchCheckStatus; points: number; max: number; words: string[]}[];
+  keywords: {word: string; posts: number; inTitle: boolean; inDescription: boolean}[];
+  titleIdeas: string[]; usernameIdeas: string[]; title: string; username: string | null; description: string; postsRead: number;
+};

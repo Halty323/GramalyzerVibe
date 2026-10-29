@@ -302,6 +302,32 @@ test('insights show how fast posts get views and flag the one that lags', async 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
+test('insights compare the channel with the watchlist and check how findable it is in search', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.getByLabel('Filter channel').selectOption('makers');
+  await page.locator('nav').getByRole('button', {name: 'Insights'}).click();
+  const gaps = page.getByRole('region', {name: 'Where competitors win'});
+  await expect(gaps.getByText('Compared with')).toBeVisible();
+  await expect(gaps.locator('.gap-rival')).toHaveCount(3);
+  await expect(gaps.getByText('Where they win')).toBeVisible();
+  await expect(gaps.locator('.gap-row').first()).toBeVisible();
+  await gaps.getByRole('button', {name: 'Explain with AI'}).click();
+  await expect(page.getByRole('dialog', {name: 'Competitor gaps, explained'})).toBeVisible();
+  await page.getByRole('button', {name: 'Close dialog'}).click();
+
+  const search = page.getByRole('region', {name: 'How easy you are to find'});
+  await expect(search.getByRole('img', {name: /Search score \d+ of 100/})).toBeVisible();
+  await expect(search.locator('.sc-checks li').first()).toBeVisible();
+  await search.getByRole('button', {name: 'Rewrite with AI'}).click();
+  await expect(page.getByRole('dialog', {name: 'A better name and description'})).toBeVisible();
+  await page.getByRole('button', {name: 'Close dialog'}).click();
+
+  await page.setViewportSize({width: 390, height: 844});
+  await expect(search.locator('.sc-score')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
 test('a queued post can carry pictures, link buttons, and be sent silently and pinned', async ({page}) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
