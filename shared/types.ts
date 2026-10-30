@@ -13,6 +13,8 @@ export type Post = {
   telegramMessageId?: number | null; deliveryError?: string | null;
   /** Up to 10 uploaded files (2+ go out as an album), link buttons (not on albums), sent without sound, pinned once sent. */
   media?: MediaRef[]; buttons?: LinkButton[]; silent?: boolean; pin?: boolean;
+  /** An evergreen repost: the channel's own earlier message ids (an album's parts), copied as they were. */
+  repostOf?: number[];
 };
 /** POST /api/media – an uploaded picture, video or GIF; GET /api/media/:id serves it. */
 export type MediaRef = {id: string; kind: 'photo' | 'video' | 'animation'; name: string};
@@ -139,3 +141,15 @@ export type SearchCheck = {
   keywords: {word: string; posts: number; inTitle: boolean; inDescription: boolean}[];
   titleIdeas: string[]; usernameIdeas: string[]; title: string; username: string | null; description: string; postsRead: number;
 };
+/** POST /api/channels/:id/draft-score – a draft against what worked on the channel. Lifts: 1.0 = a typical post. */
+export type DraftDimension = 'FORMAT' | 'LENGTH' | 'LINK' | 'TIME' | 'HASHTAGS' | 'KEYWORDS';
+/** key: what the draft has (a kind, a length bucket, LINK/NOLINK, "MONDAY 18", hashtags, words); bestKey: the channel's clearly better choice. */
+export type DraftFactor = {dimension: DraftDimension; key: string; lift: number; bestKey: string | null; bestLift: number | null; weak: boolean};
+export type DraftResult = {status: 'learning' | 'ready'; score: number; expected: number; potential: number; factors: DraftFactor[]; postsRead: number};
+/** guess: the channel has too few posts to know its best times, so this is a common default. */
+export type FreeSlot = {at: string; lift: number; guess: boolean};
+export type DraftScore = {connected: boolean; score: DraftResult | null; slots: FreeSlot[]};
+export type SlotAssignment = {postId: string; title: string; at: string; lift: number};
+/** GET /api/channels/:id/evergreen – best posts from 3+ months ago; queuedAt is set when a repost is already queued. */
+export type EvergreenPost = {messageId: number; postedAt: string; kind: string; preview: string; url: string | null; lift: number; queuedAt: string | null};
+export type Evergreen = {connected: boolean; posts: EvergreenPost[]};

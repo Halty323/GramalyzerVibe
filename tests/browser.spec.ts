@@ -394,3 +394,57 @@ test('cross-promo finds partner channels, and swaps can be accepted and asked fo
   await expect(cp.getByText(pitch)).toBeVisible();
   expect(errors).toEqual([]);
 });
+test('a draft is scored against what worked, fixed with AI, put on the best time, and drafts and old hits fill the queue', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  let prompt = '';
+  await page.route('https://ai.example.test/v1/chat/completions', async route => {
+    prompt = route.request().postData() ?? '';
+    await route.fulfill({contentType: 'text/event-stream', headers: {'Access-Control-Allow-Origin': '*'}, body: `data: ${JSON.stringify({choices: [{delta: {content: 'A sharper tip of the day #typography'}}]})}\n\ndata: [DONE]\n\n`});
+  });
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('gramalyzer.ai', JSON.stringify({provider: 'custom', baseUrl: 'https://ai.example.test/v1', apiKey: 'test-key', model: 'test-model', voice: '', contentLang: ''})));
+  await page.reload();
+  await page.getByLabel('Filter channel').selectOption('design');
+  await page.getByRole('button', {name: 'New post', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Message', {exact: true}).fill('Quick tip of the day');
+  const score = dialog.getByRole('region', {name: 'Draft score'});
+  await expect(score.locator('.ds-score strong')).toHaveText(/^\d+$/);
+  await expect(score.locator('li.weak').filter({hasText: 'Format'})).toContainText('Try Video');
+  await expect(score.locator('li.weak').filter({hasText: 'Hashtags'})).toContainText('#typography');
+  await score.getByRole('button', {name: /^Use best time/}).click();
+  await expect(score.getByText('On the best free time')).toBeVisible();
+  await score.getByRole('button', {name: 'Fix with AI'}).click();
+  await expect(score.locator('.ai-text')).toHaveText('A sharper tip of the day #typography');
+  expect(prompt).toContain('Add the hashtag #typography');
+  await score.getByRole('button', {name: 'Replace text'}).click();
+  await expect(dialog.getByLabel('Message', {exact: true})).toHaveValue('A sharper tip of the day #typography');
+  await expect(score.locator('li').filter({hasText: 'Hashtags'})).not.toHaveClass(/weak/);
+  if (process.env.SHOTS) await page.screenshot({path: `${process.env.SHOTS}/draft-score.png`});
+  await dialog.getByLabel('Save as').selectOption('draft');
+  await dialog.getByLabel('Post title').fill(`Score test ${Date.now() % 100000}`);
+  await dialog.getByRole('button', {name: 'Save draft'}).click();
+  await page.evaluate(() => localStorage.removeItem('gramalyzer.ai'));
+
+  await page.locator('nav').getByRole('button', {name: 'Schedule'}).click();
+  const fill = page.getByRole('region', {name: 'Fill the best times'});
+  await fill.getByRole('button', {name: /^Plan \d+ drafts?$/}).click();
+  await expect(fill.locator('.fill-list li').first()).toBeVisible();
+  const evergreen = page.getByRole('region', {name: 'Repost your best old posts'});
+  await expect(evergreen.locator('.evergreen-list li').first()).toBeVisible();
+  if (process.env.SHOTS) {await page.waitForTimeout(1500); await page.screenshot({path: `${process.env.SHOTS}/schedule.png`, fullPage: true});}
+  await fill.getByRole('button', {name: /^Schedule \d+ posts?$/}).click();
+  await expect(page.locator('.toast')).toContainText(/scheduled/);
+  const first = evergreen.locator('.evergreen-list li').filter({has: page.getByRole('button', {name: 'Repost'})}).first();
+  const preview = await first.locator('strong').textContent();
+  await first.getByRole('button', {name: 'Repost'}).click();
+  await expect(page.locator('.toast')).toContainText('Repost queued for');
+  await expect(evergreen.locator('li').filter({hasText: preview!.slice(0, 30)})).toContainText('Queued for');
+  await page.setViewportSize({width: 390, height: 844});
+  await expect(evergreen.locator('.evergreen-list li').first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // the demo database outlives a run: take back what this run queued so the free times and old hits are there next time
+  const queued = (await (await page.request.get('/api/workspace')).json()).posts.filter((p: {title: string; repostOf?: number[]}) => p.repostOf?.length || p.title.startsWith('Score test'));
+  for (const p of queued) await page.request.delete(`/api/posts/${p.id}`);
+  expect(errors).toEqual([]);
+});

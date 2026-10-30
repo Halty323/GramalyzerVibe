@@ -1,4 +1,4 @@
-import type { Channel, ChannelInsights, CompetitorGap, FeedPost, GapReport, InsightGroup, Post, SearchCheck, TrackedStats, TrackedSummary } from '../../shared/types';
+import type { Channel, ChannelInsights, CompetitorGap, DraftFactor, FeedPost, GapReport, InsightGroup, Post, SearchCheck, TrackedStats, TrackedSummary } from '../../shared/types';
 import type { ChatMessage } from './client';
 
 /**
@@ -297,6 +297,29 @@ export function searchFix(ctx: Context, check: SearchCheck): ChatMessage[] {
   return [
     system(ctx, 'You make Telegram channels easy to find in Telegram search, which matches words in the title and username.'),
     {role: 'user', content: `${s}\nSuggest: 1) three better titles (under 32 characters, keep the channel's name recognisable, include the word people would search for, at most one emoji), 2) three usernames (Latin letters, digits and underscores, 5–32 characters, readable, no trailing numbers; say to check they're free), 3) a description under 255 characters: first line says what the channel gives the reader, then the topics using the channel's words, then how often it posts. Write titles and the description in the language of the channel's posts. Plain text with numbered sections.`},
+  ];
+}
+
+const LENGTHS: Record<string, string> = {NONE: 'no text', SHORT: 'up to 120 characters', MEDIUM: '121 to 400 characters', LONG: '401 to 800 characters', XLONG: 'over 800 characters'};
+
+/** The draft-score factors the text itself can fix: length, link and hashtags. */
+export const fixable = (factors: DraftFactor[]) => factors.filter(f => f.weak && f.bestKey && ['LENGTH', 'LINK', 'HASHTAGS'].includes(f.dimension));
+
+/** Rewrites a draft so its weak spots match what has worked on the channel, keeping everything else. */
+export function fixDraft(ctx: Context, body: string, factors: DraftFactor[]): ChatMessage[] {
+  const steps = fixable(factors).map(f => {
+    const lift = `${f.bestLift}× a typical post here, against ${f.lift}× now`;
+    switch (f.dimension) {
+      case 'LENGTH': return `- Make it ${LENGTHS[f.bestKey!] ?? f.bestKey} long (${lift}). Cut filler or add one useful specific; keep the point.`;
+      case 'LINK': return f.bestKey === 'LINK'
+        ? `- Posts with a link do better here (${lift}). Add one natural call to action with a link; if the right URL isn't in the post, write [link] where it goes.`
+        : `- Posts without links do better here (${lift}). Remove the links and keep what they pointed to in a sentence.`;
+      default: return `- Add the hashtag ${f.bestKey} where it fits (${lift}).`;
+    }
+  }).join('\n');
+  return [
+    system(ctx, 'You edit Telegram drafts so they match what has worked on this channel.'),
+    {role: 'user', content: `Change this draft as follows, and nothing else: same language, voice, facts and emoji.\n${steps}\n\nAnswer with the post text only: no preface, no quotes around it, no explanation.\n\nDraft:\n${body}`},
   ];
 }
 
