@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUp, Bot, CalendarPlus, Check, Copy, ExternalLink, Eye, EyeOff, Image, LoaderCircle, MessageSquarePlus, PenLine, RefreshCw, Settings2, Sparkles, Square, WandSparkles, X } from 'lucide-react';
-import type { Channel, ChannelInsights, FeedPost, Post, TrackedStats, TrackedSummary } from '../shared/types';
+import type { Channel, ChannelInsights, FeedPost, GapReport, Post, SearchCheck, TrackedStats, TrackedSummary } from '../shared/types';
 import { AiError, complete, listModels, parsePlan, streamChat, type ChatMessage, type PlannedPost } from './ai/client';
 import { channelContext, grounding } from './ai/context';
 import { channelLook, type Look } from './ai/look';
@@ -246,6 +246,8 @@ export const reports = {
   review: (channel: Channel, posts: Post[], s: AiSettings, lang: string) => async () => prompts.review(await channelContext(channel, posts, s, lang)),
   teardown: (mine: Channel | undefined, posts: Post[], s: AiSettings, lang: string, title: string, feed: FeedPost[], stats: TrackedStats | null) => async () => prompts.teardown(await channelContext(mine, posts, s, lang), title, feed, stats),
   compare: (mine: Channel | undefined, posts: Post[], s: AiSettings, lang: string, tracked: TrackedSummary[]) => async () => prompts.compare(await channelContext(mine, posts, s, lang), tracked),
+  gaps: (mine: Channel, posts: Post[], s: AiSettings, lang: string, report: GapReport) => async () => prompts.gaps(await channelContext(mine, posts, s, lang), report),
+  searchFix: (mine: Channel, posts: Post[], s: AiSettings, lang: string, check: SearchCheck) => async () => prompts.searchFix(await channelContext(mine, posts, s, lang), check),
 };
 
 const SUGGESTIONS = ['ai.chat_s_ideas', 'ai.chat_s_today', 'ai.chat_s_week', 'ai.chat_s_best', 'ai.chat_s_series', 'ai.chat_s_competitors'] as const;
@@ -282,7 +284,7 @@ export function Assistant({channel, posts, tracked, onSetup, onDraft}: {channel:
   </section>;
 }
 
-function CopyButton({text}: {text: string}) {
+export function CopyButton({text}: {text: string}) {
   const {t} = useI18n();
   const [copied, setCopied] = useState(false);
   return <button className="button small-button" onClick={() => {void navigator.clipboard?.writeText(text).then(() => {setCopied(true); setTimeout(() => setCopied(false), 1500);});}}>{copied ? <Check size={14}/> : <Copy size={14}/>}{copied ? t('ai.copied') : t('ai.copy')}</button>;

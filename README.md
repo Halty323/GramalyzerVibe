@@ -122,6 +122,11 @@ The API and domain code live in `GramalyzerBot/src/main/java/com/halty/gramalyze
 | `PUT /api/channels/:id/cross-promo/profile` | `{topic, language, pitch, enabled}` |
 | `POST /api/channels/:id/cross-promo/swaps` / `POST …/swaps/:swapId/(accept\|decline\|cancel\|end)` | Ask a partner to swap posts (`{partner}`), or answer, take back or end a swap. Accepting gives both channels a promo link. |
 | `GET /api/channels/:id/views` | View speed: the usual views 1, 6 and 24 hours after posting and each recent post against it, marked behind, on pace or flying (`ViewSpeed`). Shown on Insights for public own channels. |
+| `GET /api/channels/:id/gaps` | Competitor gaps against the watchlist: where competitors win (format, time, length, topic) with their best post, and where this channel is ahead (`CompetitorGaps`). Shown on Insights with "Explain with AI". |
+| `GET /api/channels/:id/search-check` | How findable the channel is in Telegram search: score, checks, the words its posts are about, name and username ideas (`SearchCheck`). Shown on Insights with "Rewrite with AI". |
+| `POST /api/channels/:id/draft-score` | A draft (`{body, media, buttons, scheduledAt, postId}`) rated against what worked on the channel: score out of 100, expected lift, each factor with the channel's better option, and the next 3 free good times (`DraftScore`). Shown in the post editor as you type, with "Use best time" and "Fix with AI". |
+| `GET /api/channels/:id/best-slots?count=5` / `POST …/fill-slots` | The next free good times, and the channel's drafts spread over them (`{postIds, apply}`; `apply: false` previews). Shown on Schedule. |
+| `GET /api/channels/:id/evergreen` / `POST …/evergreen/:messageId` | The channel's best posts from 3+ months ago, and a silent repost of one queued at the next free good time (`Evergreen`). A repost carries `repostOf` and is sent as a copy of the original. Shown on Schedule. |
 | `POST /api/media?name=` / `GET /api/media/:id` | Upload a picture, GIF or video for a post (raw body with its `Content-Type`), or fetch it |
 
 Outside demo mode, requests require a browser session or `Authorization: Bearer <GRAMALYZER_API_TOKEN>`. Sessions last eight hours and reset when Spring restarts. This is a single administrative workspace with a shared access token; individual Telegram sign-in and channel-scoped moderator roles remain future work.

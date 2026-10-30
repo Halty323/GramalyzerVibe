@@ -13,6 +13,8 @@ export type Post = {
   telegramMessageId?: number | null; deliveryError?: string | null;
   /** Up to 10 uploaded files (2+ go out as an album), link buttons (not on albums), sent without sound, pinned once sent. */
   media?: MediaRef[]; buttons?: LinkButton[]; silent?: boolean; pin?: boolean;
+  /** An evergreen repost: the channel's own earlier message ids (an album's parts), copied as they were. */
+  repostOf?: number[];
 };
 /** POST /api/media – an uploaded picture, video or GIF; GET /api/media/:id serves it. */
 export type MediaRef = {id: string; kind: 'photo' | 'video' | 'animation'; name: string};
@@ -118,3 +120,36 @@ export type PostSpeed = {
   h1: number | null; h6: number | null; h24: number | null; status: 'early' | 'lag' | 'fast' | 'normal' | 'unknown'; ratio: number | null;
 };
 export type ViewSpeed = {connected: boolean; available: boolean; usual: ViewPace; posts: PostSpeed[]};
+/** Where watched channels win and an own channel doesn't. Lifts are against each channel's own median post (1.0 = typical). */
+export type GapDimension = 'FORMAT' | 'HOURS' | 'LENGTH' | 'TOPIC';
+export type CompetitorGap = {
+  dimension: GapDimension; key: string; missing: boolean; theirLift: number; yourLift: number | null; theirShare: number; yourShare: number;
+  theirPosts: number; yourPosts: number; channels: number; example: {channel: string; preview: string; url: string | null; lift: number} | null;
+};
+export type GapRival = {username: string; title: string; subscribers: number | null; avgViews: number | null; er: number | null; postsPerDay: number | null; topFormat: string | null; posts: number};
+export type GapReport = {
+  status: 'no_competitors' | 'learning' | 'ready'; measure: 'VIEWS' | 'ENGAGEMENT';
+  you: {title: string; subscribers: number | null; postsPerDay: number | null; topFormat: string | null; posts: number};
+  rivals: GapRival[]; gaps: CompetitorGap[]; edges: CompetitorGap[]; theirPosts: number; yourPosts: number;
+};
+export type CompetitorGaps = {connected: boolean; report: GapReport | null};
+/** How findable a channel is in Telegram's search. Check ids match the sc.check.* translation keys. */
+export type SearchCheckStatus = 'OK' | 'WARN' | 'BAD';
+export type SearchCheck = {
+  score: number; grade: 'good' | 'fair' | 'poor';
+  checks: {id: string; status: SearchCheckStatus; points: number; max: number; words: string[]}[];
+  keywords: {word: string; posts: number; inTitle: boolean; inDescription: boolean}[];
+  titleIdeas: string[]; usernameIdeas: string[]; title: string; username: string | null; description: string; postsRead: number;
+};
+/** POST /api/channels/:id/draft-score – a draft against what worked on the channel. Lifts: 1.0 = a typical post. */
+export type DraftDimension = 'FORMAT' | 'LENGTH' | 'LINK' | 'TIME' | 'HASHTAGS' | 'KEYWORDS';
+/** key: what the draft has (a kind, a length bucket, LINK/NOLINK, "MONDAY 18", hashtags, words); bestKey: the channel's clearly better choice. */
+export type DraftFactor = {dimension: DraftDimension; key: string; lift: number; bestKey: string | null; bestLift: number | null; weak: boolean};
+export type DraftResult = {status: 'learning' | 'ready'; score: number; expected: number; potential: number; factors: DraftFactor[]; postsRead: number};
+/** guess: the channel has too few posts to know its best times, so this is a common default. */
+export type FreeSlot = {at: string; lift: number; guess: boolean};
+export type DraftScore = {connected: boolean; score: DraftResult | null; slots: FreeSlot[]};
+export type SlotAssignment = {postId: string; title: string; at: string; lift: number};
+/** GET /api/channels/:id/evergreen – best posts from 3+ months ago; queuedAt is set when a repost is already queued. */
+export type EvergreenPost = {messageId: number; postedAt: string; kind: string; preview: string; url: string | null; lift: number; queuedAt: string | null};
+export type Evergreen = {connected: boolean; posts: EvergreenPost[]};

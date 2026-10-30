@@ -1,9 +1,11 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { CalendarDays, ChartNoAxesCombined, Clock3, ExternalLink, FlaskConical, LoaderCircle, Radio, Sparkles, TrendingUp } from 'lucide-react';
-import type { Channel, ChannelInsights, InsightGroup, Weekday } from '../shared/types';
+import type { Channel, ChannelInsights, GapReport, InsightGroup, SearchCheck, Weekday } from '../shared/types';
 import { errorMessage } from './api';
 import { CrossPromoSection } from './CrossPromo';
+import { GapsSection } from './Gaps';
 import { GrowthSection } from './Growth';
+import { SearchCheckSection } from './SearchCheck';
 import { ViewSpeedSection } from './ViewSpeed';
 import { isKey, useI18n, type I18n } from './i18n';
 
@@ -27,7 +29,7 @@ function useDays() {
 }
 
 /** Best times and content signals from the bot's analysis of one channel. */
-export function InsightsPage({channel, showingFirst, fetchInsights, onPlan}: {channel: Channel; showingFirst: boolean; fetchInsights: (id: string) => Promise<ChannelInsights>; onPlan: (at: string) => void}) {
+export function InsightsPage({channel, showingFirst, fetchInsights, onPlan, onGapsAi, onSearchAi}: {channel: Channel; showingFirst: boolean; fetchInsights: (id: string) => Promise<ChannelInsights>; onPlan: (at: string) => void; onGapsAi: (report: GapReport) => void; onSearchAi: (check: SearchCheck) => void}) {
   const {i18n, dayName, dayShort, hourRange, when} = useDays();
   const {t, tn, rich} = i18n;
   const [data, setData] = useState<ChannelInsights | null>(null);
@@ -43,7 +45,7 @@ export function InsightsPage({channel, showingFirst, fetchInsights, onPlan}: {ch
   if (error) return <>{scope}<div className="error-banner" role="alert">{errorMessage(error, t)}</div></>;
   if (!data) return <>{scope}<section className="panel ins-empty"><LoaderCircle className="spin"/><p>{t('ins.reading', {name: channel.name})}</p></section></>;
   if (data.status === 'not_connected') return <>{scope}<section className="notice connect-notice"><Radio size={20}/><div><strong>{t('ins.nc_title', {name: channel.name})}</strong><p>{t('ins.nc_text')}</p></div></section></>;
-  if (data.status === 'learning') return <>{scope}<section className="panel ins-learning"><div className="panel-heading"><div><div className="mini-eyebrow"><Sparkles size={13}/>{t('ins.learning')}</div><h2>{tn('ins.learning_title', data.postsNeeded)}</h2><p>{[tn('ins.usable', data.counts.eligible), data.counts.immature ? tn('ins.immature', data.counts.immature) : '', data.counts.excluded ? tn('ins.excluded', data.counts.excluded) : ''].filter(Boolean).join(' · ')}.</p></div></div><div className="ins-progress" role="progressbar" aria-valuemin={0} aria-valuemax={20} aria-valuenow={data.counts.eligible}><span style={{width: `${Math.min(100, data.counts.eligible / (data.counts.eligible + data.postsNeeded) * 100)}%`}}/></div></section><ViewSpeedSection channel={channel}/><GrowthSection channel={channel}/><CrossPromoSection channel={channel}/></>;
+  if (data.status === 'learning') return <>{scope}<section className="panel ins-learning"><div className="panel-heading"><div><div className="mini-eyebrow"><Sparkles size={13}/>{t('ins.learning')}</div><h2>{tn('ins.learning_title', data.postsNeeded)}</h2><p>{[tn('ins.usable', data.counts.eligible), data.counts.immature ? tn('ins.immature', data.counts.immature) : '', data.counts.excluded ? tn('ins.excluded', data.counts.excluded) : ''].filter(Boolean).join(' · ')}.</p></div></div><div className="ins-progress" role="progressbar" aria-valuemin={0} aria-valuemax={20} aria-valuenow={data.counts.eligible}><span style={{width: `${Math.min(100, data.counts.eligible / (data.counts.eligible + data.postsNeeded) * 100)}%`}}/></div></section><ViewSpeedSection channel={channel}/><GapsSection channel={channel} onAi={onGapsAi}/><SearchCheckSection channel={channel} onAi={onSearchAi}/><GrowthSection channel={channel}/><CrossPromoSection channel={channel}/></>;
 
   const maxCell = Math.max(1, ...data.heatmap.lift.flat());
   const winners = data.content.topics.filter(g => g.lift >= 1.1).slice(0, 3);
@@ -61,7 +63,7 @@ export function InsightsPage({channel, showingFirst, fetchInsights, onPlan}: {ch
         <ul className="ins-suggestions">{data.suggestions.slice(0, 4).map(s => <li key={s.at}><span><strong>{when(s.at)}</strong><small>{t('ins.your_time', {lift: lift(s.lift, i18n)})}</small></span><button className="button" onClick={() => onPlan(s.at)}>{t('ins.plan')}</button></li>)}</ul>
       </section>
     </div>
-    <ViewSpeedSection channel={channel}/>
+    <ViewSpeedSection channel={channel}/><GapsSection channel={channel} onAi={onGapsAi}/><SearchCheckSection channel={channel} onAi={onSearchAi}/>
     <GrowthSection channel={channel}/>
     <CrossPromoSection channel={channel}/>
     <section className="panel ins-heat">

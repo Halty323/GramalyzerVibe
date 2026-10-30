@@ -1,4 +1,4 @@
-import type { Channel, ChannelInsights, FeedPost, InsightGroup, Post, TrackedStats, TrackedSummary } from '../../shared/types';
+import type { Channel, ChannelInsights, CompetitorGap, DraftFactor, FeedPost, GapReport, InsightGroup, Post, SearchCheck, TrackedStats, TrackedSummary } from '../../shared/types';
 import type { ChatMessage } from './client';
 
 /**
@@ -268,6 +268,58 @@ export function compare(ctx: Context, tracked: TrackedSummary[]): ChatMessage[] 
   return [
     system(ctx, 'You compare Telegram channels.'),
     {role: 'user', content: `${s}\nCompare these channels with mine: who is growing and why it might be, which engagement levels are realistic for my size, and 3 moves for me this month. Under 250 words, plain text.`},
+  ];
+}
+
+function gapLine(g: CompetitorGap): string {
+  const what = g.dimension === 'FORMAT' ? `format ${kindName(g.key)}` : g.dimension === 'HOURS' ? `posting between ${g.key}:00 and ${(Number(g.key) + 4) % 24}:00`
+    : g.dimension === 'LENGTH' ? `length ${g.key} (SHORT ≤120 chars, MEDIUM 121–400, LONG 401–800, XLONG 800+)` : `topic "${g.key}"`;
+  const you = g.yourPosts === 0 ? 'I never do this' : g.missing ? `${Math.round(g.yourShare * 100)}% of my posts` : `my lift ${opt(g.yourLift, 2)}`;
+  const example = g.example?.preview ? `; their best: "${g.example.preview}" (@${g.example.channel})` : '';
+  return `- ${what}: their lift ${g.theirLift.toFixed(2)} in ${Math.round(g.theirShare * 100)}% of their posts; ${you}${example}`;
+}
+
+export function gaps(ctx: Context, report: GapReport): ChatMessage[] {
+  const rivals = report.rivals.map(r => `- ${r.title} @${r.username}: ${opt(r.subscribers)} subscribers, avg views ${opt(r.avgViews)}, ${opt(r.postsPerDay, 1)} posts/day, mostly ${r.topFormat ? kindName(r.topFormat) : '?'}`).join('\n');
+  const s = `Competitors on my watchlist:\n${rivals}\n\nWhere they win (lift = a post's result over its own channel's median post, 1.0 = typical):\n${report.gaps.map(gapLine).join('\n') || '- nothing clear'}\n`
+    + (report.edges.length ? `\nWhere I'm ahead:\n${report.edges.map(g => `- ${g.dimension} ${g.key}: my lift ${opt(g.yourLift, 2)}`).join('\n')}\n` : '');
+  return [
+    system(ctx, 'You compare a Telegram channel with its competitors and turn the gaps into a plan.'),
+    {role: 'user', content: `${s}\nExplain these gaps in plain words: what my competitors do that works and I skip, which 3 gaps are worth closing first for my channel, and how (one concrete post idea for each, adapted to my voice, not copied). End with one strength I should keep. Under 280 words, plain text with short numbered sections.`},
+  ];
+}
+
+export function searchFix(ctx: Context, check: SearchCheck): ChatMessage[] {
+  const issues = check.checks.filter(c => c.status !== 'OK').map(c => `- ${c.id}${c.words.length ? ` (${c.words.join(', ')})` : ''}`).join('\n');
+  const words = check.keywords.map(k => `${k.word} (${k.posts} posts)`).join(', ');
+  const s = `Current title: ${check.title}\nUsername: ${check.username ? '@' + check.username : 'none, the channel is private'}\nDescription: ${check.description || '(empty)'}\n`
+    + `Search score ${check.score}/100. Issues:\n${issues || '- none'}\nWords the channel's posts are about: ${words || 'unknown'}\n`;
+  return [
+    system(ctx, 'You make Telegram channels easy to find in Telegram search, which matches words in the title and username.'),
+    {role: 'user', content: `${s}\nSuggest: 1) three better titles (under 32 characters, keep the channel's name recognisable, include the word people would search for, at most one emoji), 2) three usernames (Latin letters, digits and underscores, 5–32 characters, readable, no trailing numbers; say to check they're free), 3) a description under 255 characters: first line says what the channel gives the reader, then the topics using the channel's words, then how often it posts. Write titles and the description in the language of the channel's posts. Plain text with numbered sections.`},
+  ];
+}
+
+const LENGTHS: Record<string, string> = {NONE: 'no text', SHORT: 'up to 120 characters', MEDIUM: '121 to 400 characters', LONG: '401 to 800 characters', XLONG: 'over 800 characters'};
+
+/** The draft-score factors the text itself can fix: length, link and hashtags. */
+export const fixable = (factors: DraftFactor[]) => factors.filter(f => f.weak && f.bestKey && ['LENGTH', 'LINK', 'HASHTAGS'].includes(f.dimension));
+
+/** Rewrites a draft so its weak spots match what has worked on the channel, keeping everything else. */
+export function fixDraft(ctx: Context, body: string, factors: DraftFactor[]): ChatMessage[] {
+  const steps = fixable(factors).map(f => {
+    const lift = `${f.bestLift}× a typical post here, against ${f.lift}× now`;
+    switch (f.dimension) {
+      case 'LENGTH': return `- Make it ${LENGTHS[f.bestKey!] ?? f.bestKey} long (${lift}). Cut filler or add one useful specific; keep the point.`;
+      case 'LINK': return f.bestKey === 'LINK'
+        ? `- Posts with a link do better here (${lift}). Add one natural call to action with a link; if the right URL isn't in the post, write [link] where it goes.`
+        : `- Posts without links do better here (${lift}). Remove the links and keep what they pointed to in a sentence.`;
+      default: return `- Add the hashtag ${f.bestKey} where it fits (${lift}).`;
+    }
+  }).join('\n');
+  return [
+    system(ctx, 'You edit Telegram drafts so they match what has worked on this channel.'),
+    {role: 'user', content: `Change this draft as follows, and nothing else: same language, voice, facts and emoji.\n${steps}\n\nAnswer with the post text only: no preface, no quotes around it, no explanation.\n\nDraft:\n${body}`},
   ];
 }
 
