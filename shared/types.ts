@@ -21,17 +21,27 @@ export type MediaRef = {id: string; kind: 'photo' | 'video' | 'animation'; name:
 export type LinkButton = {text: string; url: string};
 export type Workspace = { channels: Channel[]; posts: Post[]; demo: boolean; botEnabled: boolean; history: {channelId: string; date: string; subscribers: number}[] };
 
-/** GET /api/channels/:id/insights – what the bot's analysis says about one channel. "lift" multiplies the channel's typical engagement (1 = typical). */
+/**
+ * GET /api/channels/:id/insights – what the bot's analysis says about one channel. "lift" multiplies what was usual
+ * for the channel around each post (1 = typical): posts are compared with their neighbours, so growth or a slump isn't
+ * credited to a format or a time. Sponsored posts are left out.
+ */
 export type Weekday = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY';
-export type InsightSlot = { day: Weekday; hour: number; lift: number; support: number };
-export type InsightGroup = { key: string; posts: number; lift: number; avgScore: number };
+/** from/span: the hours the slot covers; channels under 100 posts get 4-hour blocks (span 4), bigger ones single hours. */
+export type InsightSlot = { day: Weekday; hour: number; lift: number; support: number; from: number; span: number };
+/** low–high: the 90% range of lift; a range that crosses 1 means the data can't tell yet. */
+export type InsightGroup = { key: string; posts: number; lift: number; avgScore: number; low: number; high: number };
+/** Whether the channel's post model predicted its newest posts: proven, unproven, or untested (too few posts). */
+export type ModelCheck = {status: 'proven' | 'unproven' | 'untested'; rho: number | null; tested: number};
+export type InsightMetric = 'AUTO' | 'ENGAGEMENT' | 'REACTIONS' | 'COMMENTS' | 'VIEWS';
 export type ChannelInsights = {
   channelId: string;
   /** ready = enough posts; learning = fewer than 20 usable posts, times and content are empty; not_connected = the bot has no data for this channel. */
   status: 'ready' | 'learning' | 'not_connected';
-  generatedAt: string; timezone: string; metric: 'ENGAGEMENT' | 'REACTIONS' | 'COMMENTS'; metricFormula: string; windowDays: number;
+  generatedAt: string; timezone: string; metric: InsightMetric; metricFormula: string; windowDays: number;
   confidence: 'LOW' | 'MEDIUM' | 'HIGH'; notes: ('FEW_POSTS' | 'NO_SIGNAL' | 'LOW_TIME_VARIETY')[];
-  counts: {total: number; eligible: number; excluded: number; immature: number}; postsNeeded: number;
+  /** ads: of excluded, how many were sponsored posts. */
+  counts: {total: number; eligible: number; excluded: number; immature: number; ads: number}; check: ModelCheck; postsNeeded: number;
   avgReactions: number; avgComments: number;
   bestTimes: InsightSlot[]; experiments: InsightSlot[];
   /** Next real date-time (ISO) of each best slot, earliest first. */
@@ -39,7 +49,7 @@ export type ChannelInsights = {
   days: {day: Weekday; posts: number; lift: number}[]; hours: {hour: number; posts: number; lift: number}[];
   /** [day][hour], day 0 = Monday, channel timezone. */
   heatmap: {lift: number[][]; posts: number[][]};
-  /** kinds: TEXT/PHOTO/VIDEO/…; lengths: NONE/SHORT/MEDIUM/LONG/XLONG; links: LINK/NOLINK; topics: hashtags; frequency: "1"/"2"/"3+" posts that day. */
+  /** kinds: TEXT/PHOTO/VIDEO/…; lengths: NONE/SHORT/MEDIUM/LONG/XLONG; links: LINK/NOLINK; topics: hashtags; frequency: days with "1"/"2"/"3+" posts, the day's total against a one-post day. */
   content: {kinds: InsightGroup[]; lengths: InsightGroup[]; links: InsightGroup[]; topics: InsightGroup[]; keywords: InsightGroup[]; frequency: InsightGroup[]};
   cadence: {postsPerWeek: number; mostPostedDay: Weekday | null; bestDay: Weekday | null; longestGapDays: number; lastPost: string | null};
   topPosts: {messageId: number; postedAt: string; kind: string; preview: string; reactions: number; comments: number; score: number; url: string | null}[];
@@ -63,21 +73,26 @@ export type FeedPost = {
 export type TrackedStats = {
   subscribers: number | null; change7: number | null; change30: number | null;
   series: {day: string; subscribers: number | null; avgViews: number | null}[];
-  /** er: average views ÷ subscribers, in %; reactionRate: reactions per 100 views. */
-  avgViews: number | null; er: number | null; avgReactions: number | null; reactionRate: number | null;
+  /**
+   * err: reach, views ÷ subscribers in % (TGStat's ERR), from views a day after posting (errBasis "24h") or, until
+   * enough posts have those, the latest views ("latest"). reactionRate: ER, reactions per 100 views.
+   */
+  avgViews: number | null; err: number | null; errBasis: '24h' | 'latest' | null; avgReactions: number | null; reactionRate: number | null;
   postsPerDay: number | null; lastPost: string | null;
   kinds: {kind: string; posts: number; avgViews: number | null}[];
   hashtags: {tag: string; posts: number; avgViews: number | null}[];
   /** Posts per hour of day in the requested timezone, and per weekday (Monday first). */
   hours: number[]; days: number[];
   sample: number;
+  /** Hints worth checking before buying a placement, not proof: LOW_REACH, FLAT_VIEWS, SUBSCRIBER_JUMP. */
+  flags: ('LOW_REACH' | 'FLAT_VIEWS' | 'SUBSCRIBER_JUMP')[];
 };
 /** GET /api/channels/:id/feed – a workspace channel's messages. source: preview = its public t.me page (with views), bot = what the bot collected, workspace = posts sent from here. */
 export type ChannelFeed = {channelId: string; source: 'preview' | 'bot' | 'workspace'; posts: FeedPost[]; scheduled: FeedPost[]; stats: TrackedStats | null};
 /** A row of GET /api/tracked: a public channel on the website's watchlist. error is an error code from the last failed refresh. */
 export type TrackedSummary = {
   username: string; title: string; description: string | null; photoUrl: string | null; verified: boolean;
-  subscribers: number | null; change7: number | null; avgViews: number | null; er: number | null; postsPerDay: number | null;
+  subscribers: number | null; change7: number | null; avgViews: number | null; err: number | null; postsPerDay: number | null;
   lastPost: string | null; fetchedAt: string | null; error: TrackingError | null; demo: boolean; tracked: boolean;
   /** Daily subscriber counts while tracked, oldest first (at most 30). */
   series: number[]; url: string | null;
@@ -90,15 +105,22 @@ export type TrackingError = 'invalid_username' | 'private_link' | 'not_found' | 
 export type GrowthDay = {date: string; joined: number; left: number};
 /** What happened while a post was the newest (up to 24 h, hours long); joins through promo links aren't counted here. */
 export type PostEffect = {messageId: number; postedAt: string; kind: string; preview: string; joined: number; left: number; hours: number; url: string | null};
-/** An invite link made for one promo, over its whole life. stayed: joined through it and haven't left. */
+/**
+ * An invite link made for one promo, over its whole life. stayed: joined through it and haven't left. kept7/kept30:
+ * the share still there 7 and 30 days after joining, of those who joined that long ago (null until anyone has).
+ */
 export type PromoLinkStat = {
   id: number; name: string; url: string; cost: number | null; currency: string | null; createdAt: string; revoked: boolean;
-  joined: number; left: number; stayed: number; costPerSubscriber: number | null;
+  joined: number; left: number; stayed: number; costPerSubscriber: number | null; kept7: number | null; kept30: number | null;
 };
+/** Organic joins and leaves per post of one format, while each was the newest. */
+export type FormatEffect = {kind: string; posts: number; joined: number; left: number};
+/** Another channel (among those anyone watches) that forwarded or mentioned this one in the last 60 days. */
+export type Citation = {username: string; title: string; subscribers: number | null; forwards: number; mentions: number; last: string; url: string | null};
 /** tracking is false until the bot has seen a first join or leave; since is when that was. */
 export type ChannelGrowth = {
   connected: boolean; tracking: boolean; since: string | null; days: number; joined: number; left: number; net: number; fromLinks: number;
-  daily: GrowthDay[]; gainers: PostEffect[]; losers: PostEffect[]; links: PromoLinkStat[];
+  daily: GrowthDay[]; gainers: PostEffect[]; losers: PostEffect[]; links: PromoLinkStat[]; formats: FormatEffect[]; citations: Citation[];
 };
 /** GET /api/channels/:id/cross-promo – a channel's cross-promo profile, partners that fit and swaps. profile is null until it joins. */
 export type SwapProfile = {topic: string; language: string; pitch: string | null; enabled: boolean};
@@ -120,33 +142,47 @@ export type PostSpeed = {
   h1: number | null; h6: number | null; h24: number | null; status: 'early' | 'lag' | 'fast' | 'normal' | 'unknown'; ratio: number | null;
 };
 export type ViewSpeed = {connected: boolean; available: boolean; usual: ViewPace; posts: PostSpeed[]};
-/** Where watched channels win and an own channel doesn't. Lifts are against each channel's own median post (1.0 = typical). */
+/** Where watched channels win and an own channel doesn't. Lifts are against each channel's neighbouring posts (1.0 = typical), views a day after posting, sponsored posts left out. */
 export type GapDimension = 'FORMAT' | 'HOURS' | 'LENGTH' | 'TOPIC';
 export type CompetitorGap = {
   dimension: GapDimension; key: string; missing: boolean; theirLift: number; yourLift: number | null; theirShare: number; yourShare: number;
   theirPosts: number; yourPosts: number; channels: number; example: {channel: string; preview: string; url: string | null; lift: number} | null;
 };
-export type GapRival = {username: string; title: string; subscribers: number | null; avgViews: number | null; er: number | null; postsPerDay: number | null; topFormat: string | null; posts: number};
+export type GapRival = {username: string; title: string; subscribers: number | null; avgViews: number | null; err: number | null; postsPerDay: number | null; topFormat: string | null; posts: number};
 export type GapReport = {
   status: 'no_competitors' | 'learning' | 'ready'; measure: 'VIEWS' | 'ENGAGEMENT';
   you: {title: string; subscribers: number | null; postsPerDay: number | null; topFormat: string | null; posts: number};
   rivals: GapRival[]; gaps: CompetitorGap[]; edges: CompetitorGap[]; theirPosts: number; yourPosts: number;
 };
 export type CompetitorGaps = {connected: boolean; report: GapReport | null};
-/** How findable a channel is in Telegram's search. Check ids match the sc.check.* translation keys. */
+/**
+ * How findable a channel is in Telegram's search. Check ids match the sc.check.* translation keys; group "find" checks
+ * decide whether search can show the channel (out of 60 points), "join" ones whether people open it (out of 40).
+ * notes: facts about ranking no wording changes (sc.note.*). positions: where the owner found the channel themselves.
+ */
 export type SearchCheckStatus = 'OK' | 'WARN' | 'BAD';
+export type SearchPosition = {word: string; position: number | null; checkedAt: string; previous: number | null};
 export type SearchCheck = {
-  score: number; grade: 'good' | 'fair' | 'poor';
-  checks: {id: string; status: SearchCheckStatus; points: number; max: number; words: string[]}[];
+  score: number; grade: 'good' | 'fair' | 'poor'; find: number; join: number;
+  checks: {id: string; group: 'find' | 'join'; status: SearchCheckStatus; points: number; max: number; words: string[]}[];
   keywords: {word: string; posts: number; inTitle: boolean; inDescription: boolean}[];
   titleIdeas: string[]; usernameIdeas: string[]; title: string; username: string | null; description: string; postsRead: number;
+  notes: string[]; positions: SearchPosition[];
 };
-/** POST /api/channels/:id/draft-score – a draft against what worked on the channel. Lifts: 1.0 = a typical post. */
-export type DraftDimension = 'FORMAT' | 'LENGTH' | 'LINK' | 'TIME' | 'HASHTAGS' | 'KEYWORDS';
-/** key: what the draft has (a kind, a length bucket, LINK/NOLINK, "MONDAY 18", hashtags, words); bestKey: the channel's clearly better choice. */
-export type DraftFactor = {dimension: DraftDimension; key: string; lift: number; bestKey: string | null; bestLift: number | null; weak: boolean};
-export type DraftResult = {status: 'learning' | 'ready'; score: number; expected: number; potential: number; factors: DraftFactor[]; postsRead: number};
-/** guess: the channel has too few posts to know its best times, so this is a common default. */
+/**
+ * POST /api/channels/:id/draft-score – a draft against what worked on the channel. Lifts: 1.0 = a typical post.
+ * Format, length, link and time are fitted together, so traits that travel together aren't counted twice.
+ */
+export type DraftDimension = 'FORMAT' | 'LENGTH' | 'LINK' | 'TIME' | 'TOPIC' | 'KEYWORDS';
+/**
+ * key: what the draft has (a kind, a length bucket, LINK/NOLINK, the first hour of a 4-hour block, hashtags, words);
+ * low–high: the 90% range of lift; bestKey: the channel's clearly better choice; counted: false for topics and words,
+ * which are shown for context only (adding a hashtag doesn't bring the readers its subject does).
+ */
+export type DraftFactor = {dimension: DraftDimension; key: string; lift: number; low: number; high: number; bestKey: string | null; bestLift: number | null; weak: boolean; counted: boolean};
+/** ready: the score predicted the channel's newest posts, so it's shown; unproven: factors only; learning: too few posts. */
+export type DraftResult = {status: 'learning' | 'ready' | 'unproven'; score: number; expected: number; potential: number; low: number; high: number; factors: DraftFactor[]; postsRead: number; check: ModelCheck};
+/** guess: the channel has too few posts to know its best times, so this is a time to try (rotating, not a known best). */
 export type FreeSlot = {at: string; lift: number; guess: boolean};
 export type DraftScore = {connected: boolean; score: DraftResult | null; slots: FreeSlot[]};
 export type SlotAssignment = {postId: string; title: string; at: string; lift: number};

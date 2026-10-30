@@ -7,8 +7,10 @@ import * as prompts from './ai/prompts';
 import { api, ApiError, errorMessage } from './api';
 import { isKey, useI18n, type I18n } from './i18n';
 
-const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const lift = (x: number, i18n: I18n) => `${i18n.num(x, 1)}×`;
+const range = (low: number, high: number, i18n: I18n) => `${i18n.num(low, 1)}–${i18n.num(high, 1)}×`;
+/** Hours are fitted in blocks of this many, so a few posts per hour don't decide the best time. */
+const BLOCK = 4;
 /** A datetime-local value for an instant, in the visitor's clock. */
 export const localInput = (at: string) => {const d = new Date(at); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);};
 
@@ -19,15 +21,16 @@ function factorLabel(f: DraftFactor, key: string, i18n: I18n): string {
     case 'FORMAT': return known(`kind.${key}`);
     case 'LENGTH': return known(`len.${key}`);
     case 'LINK': return i18n.t(key === 'LINK' ? 'ins.with_link' : 'ins.without_link');
-    case 'TIME': {const [day, hour] = key.split(' '); return `${i18n.weekday(DAYS.indexOf(day), 'short')} ${i18n.hour(Number(hour))}`;}
-    case 'HASHTAGS': return key || i18n.t('ds.no_hashtags');
+    case 'TIME': {const h = Number(key); return `${i18n.hour(h)}–${i18n.hour((h + BLOCK) % 24)}`;}
+    case 'TOPIC': return key;
     default: return key.split(', ').map(w => `«${w}»`).join(', ');
   }
 }
 
 /**
  * The draft's score in the post editor: how it's likely to do against what worked on the channel, factor by factor,
- * with the next free good times and a one-tap AI fix for what the text itself can change.
+ * with the next free good times and a one-tap AI fix for what the text itself can change. The number only shows once
+ * it has predicted the channel's newest posts; until then the factors are shown with their ranges and no score.
  */
 export function DraftScoreBox({channel, posts, postId, body, media, buttons, at, onAt, onBody, onSetup}: {
   channel: Channel | undefined; posts: Post[]; postId: string | null; body: string; media: string[]; buttons: number; at: string | null;
@@ -61,21 +64,24 @@ export function DraftScoreBox({channel, posts, postId, body, media, buttons, at,
   const when = (iso: string) => i18n.date(iso, {weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'});
   const label = (f: DraftFactor, best: boolean) => f.dimension !== 'TIME' ? factorLabel(f, best ? f.bestKey! : f.key, i18n)
     : best ? (topSlot ? when(topSlot.at) : factorLabel(f, f.bestKey!, i18n)) : at ? when(at) : factorLabel(f, f.key, i18n);
-  const grade = r.score >= 60 ? 'good' : r.score >= 40 ? 'fair' : 'poor';
+  const grade = r.status !== 'ready' ? 'unproven' : r.score >= 60 ? 'good' : r.score >= 40 ? 'fair' : 'poor';
   const result = ai.output.trim();
 
   return <section className={`draft-score ${grade}`} aria-labelledby="ds-title" aria-busy={loading}>
     <div className="ds-head">
       <h3 id="ds-title"><Gauge size={15}/>{t('ds.title')}</h3>
-      {r.status === 'ready' ? <span className="ds-score"><strong>{r.score}</strong>/100</span> : <span className="subtle-badge">{t('ds.learning_badge')}</span>}
+      {r.status === 'ready' ? <span className="ds-score"><strong>{r.score}</strong>/100</span> : <span className="subtle-badge">{t(r.status === 'learning' ? 'ds.learning_badge' : 'ds.unproven_badge')}</span>}
       {loading && <LoaderCircle size={14} className="spin"/>}
     </div>
     {r.status === 'learning' ? <p className="ds-note">{t('ds.learning', {n: i18n.num(r.postsRead)})}</p> : <>
-      <div className="ds-bar" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={r.score} aria-label={t('ds.title')}><span style={{width: `${r.score}%`}}/></div>
-      <p className="ds-note">{t('ds.expected', {x: lift(r.expected, i18n)})}{r.potential > r.expected + 0.05 && <> · <strong>{t('ds.potential', {x: lift(r.potential, i18n)})}</strong></>}</p>
-      <ul className="ds-factors">{r.factors.map(f => <li key={f.dimension} className={f.weak ? 'weak' : f.lift >= 1.05 ? 'strong' : ''}>
-        <span className="ds-dim">{t(`ds.dim.${f.dimension}`)}</span>
-        <span className="ds-key" dir="auto">{label(f, false)}{f.key && <small>{lift(f.lift, i18n)}</small>}</span>
+      {r.status === 'ready' ? <>
+        <div className="ds-bar" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={r.score} aria-label={t('ds.title')}><span style={{width: `${r.score}%`}}/></div>
+        <p className="ds-note">{t('ds.expected', {x: lift(r.expected, i18n)})} <small>({t('ds.range', {range: range(r.low, r.high, i18n)})})</small>{r.potential > r.expected + 0.05 && <> · <strong>{t('ds.potential', {x: lift(r.potential, i18n)})}</strong></>}</p>
+        <p className="ds-proof">{t('ds.proven', {n: i18n.num(r.check.tested)})}</p>
+      </> : <p className="ds-note">{r.check.status === 'untested' ? t('ds.untested') : t('ds.unproven', {n: i18n.num(r.check.tested)})}</p>}
+      <ul className="ds-factors">{r.factors.map(f => <li key={f.dimension} className={!f.counted ? 'context' : f.weak ? 'weak' : f.low > 1 ? 'strong' : ''}>
+        <span className="ds-dim">{t(`ds.dim.${f.dimension}`)}{!f.counted && <small>{t('ds.context')}</small>}</span>
+        <span className="ds-key" dir="auto">{label(f, false)}{f.key && <small title={t('ds.range', {range: range(f.low, f.high, i18n)})}>{lift(f.lift, i18n)} · {range(f.low, f.high, i18n)}</small>}</span>
         {f.weak && f.bestKey && <span className="ds-better">{t('ds.better', {what: label(f, true), x: lift(f.bestLift!, i18n)})}</span>}
       </li>)}</ul>
     </>}
@@ -86,7 +92,7 @@ export function DraftScoreBox({channel, posts, postId, body, media, buttons, at,
         ? <button type="button" className="button small-button lavender" disabled={ai.running} onClick={() => void ai.run(async () => prompts.fixDraft(await channelContext(channel, posts, ai.settings, lang), body, r.factors), 0.5)}><WandSparkles size={14}/>{t('ds.fix')}</button>
         : <button type="button" className="button small-button" onClick={onSetup}><Sparkles size={14}/>{t('ds.fix_setup')}</button>)}
     </div>
-    {data.slots.length > 0 && <p className="ds-slots"><CalendarClock size={13}/>{t('ds.free')} {data.slots.map(s => <button type="button" key={s.at} className="chip" onClick={() => onAt(localInput(s.at))}>{when(s.at)}{!s.guess && ` · ${lift(s.lift, i18n)}`}</button>)}</p>}
+    {data.slots.length > 0 && <p className="ds-slots"><CalendarClock size={13}/>{t('ds.free')} {data.slots.map(s => <button type="button" key={s.at} className="chip" onClick={() => onAt(localInput(s.at))}>{when(s.at)}{!s.guess && ` · ${lift(s.lift, i18n)}`}</button>)}{data.slots.every(s => s.guess) && <small className="ds-guess">{t('ds.guess')}</small>}</p>}
     <AiOutput text={ai.output} running={ai.running} error={ai.error} onStop={ai.stop}>
       <button type="button" className="button small-button primary" onClick={() => {onBody(result.slice(0, 4096)); ai.reset();}}><Check size={14}/>{t('ai.replace')}</button>
       <button type="button" className="button small-button" onClick={ai.reset}><X size={14}/>{t('ai.discard')}</button>

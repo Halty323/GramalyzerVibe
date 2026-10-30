@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed, CompetitorGaps, SearchCheck, DraftScore, Evergreen, FreeSlot, Post, SlotAssignment } from '../shared/types';
+import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed, CompetitorGaps, SearchCheck, SearchPosition, DraftScore, Evergreen, FreeSlot, Post, SlotAssignment } from '../shared/types';
 import type { I18n } from './i18n';
 import { apiUrl, authHeaders, httpFetch, isApp } from './platform';
 
@@ -44,6 +44,8 @@ export const api = {
   viewSpeed: (id: string) => request<ViewSpeed>(`/channels/${encodeURIComponent(id)}/views`),
   gaps: (id: string) => request<CompetitorGaps>(`/channels/${encodeURIComponent(id)}/gaps`),
   searchCheck: (id: string) => request<SearchCheck>(`/channels/${encodeURIComponent(id)}/search-check`),
+  /** Notes where the channel was in Telegram's search for a word (null: not in the results); answers with the latest positions. */
+  notePosition: (id: string, word: string, position: number | null) => request<SearchPosition[]>(`/channels/${encodeURIComponent(id)}/search-check/positions`, {method: 'POST', body: JSON.stringify({word, position})}),
   draftScore: (id: string, draft: {body: string; media: string[]; buttons: number; scheduledAt: string | null; postId: string | null}, signal?: AbortSignal) => request<DraftScore>(`/channels/${encodeURIComponent(id)}/draft-score`, {method: 'POST', body: JSON.stringify(draft), signal}),
   bestSlots: (id: string, count: number) => request<FreeSlot[]>(`/channels/${encodeURIComponent(id)}/best-slots?count=${count}`),
   /** Spreads the channel's drafts over its next free good times; apply false only previews. */
