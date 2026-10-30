@@ -19,6 +19,9 @@ export type Post = {
 /** POST /api/media – an uploaded picture, video or GIF; GET /api/media/:id serves it. */
 export type MediaRef = {id: string; kind: 'photo' | 'video' | 'animation'; name: string};
 export type LinkButton = {text: string; url: string};
+/** The server's "bring every channel up to date" pass (/api/refresh), run when the server, the website or Studio opens or closes. */
+export type RefreshRun = { reason: string; startedAt: string; finishedAt: string | null; channels: number; refreshed: number; failed: number; left: number };
+export type RefreshStatus = { running: boolean; current: RefreshRun | null; last: RefreshRun | null };
 export type Workspace = { channels: Channel[]; posts: Post[]; demo: boolean; botEnabled: boolean; history: {channelId: string; date: string; subscribers: number}[] };
 
 /**

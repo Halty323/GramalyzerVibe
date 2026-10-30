@@ -5,7 +5,7 @@ import { AiReport, AiSettingsPanel, Assistant, Copilot, Planner, reports } from 
 import type { ChatMessage } from './ai/client';
 import { aiSettings } from './ai/settings';
 import { splitTitle } from './ai/prompts';
-import { api, ApiError, channelPhoto, errorMessage, request, usePhoto } from './api';
+import { api, ApiError, channelPhoto, errorMessage, refreshOnClose, request, usePhoto } from './api';
 import { ChannelAvatar, CountUp } from './fun';
 import { LANGS, useI18n, type StringKey } from './i18n';
 import { ChannelBestTime, InsightsPage, RhythmText } from './Insights';
@@ -69,6 +69,20 @@ export default function App() {
     return () => clearInterval(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {if (workspace) void loadTracked();}, [workspace !== null, loadTracked]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Opening the website brings every channel up to date (closing it does too); once the server is done, show the new numbers.
+  useEffect(() => {
+    if (!workspace) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const wait = async (running: boolean) => {
+      if (stopped) return;
+      if (!running) {void load(); void loadTracked(); return;}
+      timer = setTimeout(async () => {try {wait((await api.refreshStatus()).running);} catch {/* the next 15 s reload catches up */}}, 4000);
+    };
+    void api.refreshAll(isApp ? 'app-open' : 'site-open').then(s => {if (s.running) void wait(true);}).catch(() => {});
+    window.addEventListener('pagehide', refreshOnClose);
+    return () => {stopped = true; clearTimeout(timer); window.removeEventListener('pagehide', refreshOnClose);};
+  }, [workspace !== null]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {if (!toast) return; const timer = setTimeout(() => setToast(''), 4000); return () => clearTimeout(timer);}, [toast]);
   useEffect(() => {
     if (!languages) return;
