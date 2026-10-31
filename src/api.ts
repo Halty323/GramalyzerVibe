@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed, CompetitorGaps, SearchCheck, DraftScore, Evergreen, FreeSlot, Post, SlotAssignment } from '../shared/types';
+import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed, CompetitorGaps, SearchCheck, SearchPosition, RefreshStatus, DraftScore, Evergreen, FreeSlot, Post, SlotAssignment } from '../shared/types';
 import type { I18n } from './i18n';
 import { apiUrl, authHeaders, httpFetch, isApp } from './platform';
 
@@ -18,6 +18,16 @@ export async function request<T>(url: string, options?: RequestInit): Promise<T>
 }
 
 const TRACKING_ERRORS: TrackingError[] = ['invalid_username', 'private_link', 'not_found', 'not_channel', 'unreachable', 'limit', 'not_tracked'];
+/**
+ * The same request as the page goes away (tab closed, app quit). A beacon outlives the page and carries the sign-in
+ * cookie; the app sends its token with a keepalive fetch instead.
+ */
+export function refreshOnClose() {
+  const url = apiUrl(`/refresh?reason=${isApp ? 'app-close' : 'site-close'}`);
+  if (!isApp && navigator.sendBeacon?.(url)) return;
+  void httpFetch(url, {method: 'POST', keepalive: true, headers: authHeaders()}).catch(() => {});
+}
+
 /** The tracking error code of e, if it has one. */
 export function trackingError(e: unknown): TrackingError | null {
   const code = e instanceof ApiError ? e.code : undefined;
@@ -36,6 +46,9 @@ export const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const tz = () => `tz=${encodeURIComponent(zone())}`;
 
 export const api = {
+  /** Asks the server to refresh every managed and watched channel; it skips this when it did so a moment ago. */
+  refreshAll: (reason: 'site-open' | 'app-open') => request<RefreshStatus>(`/refresh?reason=${reason}`, {method: 'POST'}),
+  refreshStatus: () => request<RefreshStatus>('/refresh'),
   insights: (id: string) => request<ChannelInsights>(`/channels/${encodeURIComponent(id)}/insights`),
   growth: (id: string, days: number) => request<ChannelGrowth>(`/channels/${encodeURIComponent(id)}/growth?days=${days}`),
   createPromoLink: (id: string, link: {name: string; cost: number | null; currency: string | null}) => request<PromoLinkStat>(`/channels/${encodeURIComponent(id)}/promo-links`, {method: 'POST', body: JSON.stringify(link)}),
@@ -44,6 +57,8 @@ export const api = {
   viewSpeed: (id: string) => request<ViewSpeed>(`/channels/${encodeURIComponent(id)}/views`),
   gaps: (id: string) => request<CompetitorGaps>(`/channels/${encodeURIComponent(id)}/gaps`),
   searchCheck: (id: string) => request<SearchCheck>(`/channels/${encodeURIComponent(id)}/search-check`),
+  /** Notes where the channel was in Telegram's search for a word (null: not in the results); answers with the latest positions. */
+  notePosition: (id: string, word: string, position: number | null) => request<SearchPosition[]>(`/channels/${encodeURIComponent(id)}/search-check/positions`, {method: 'POST', body: JSON.stringify({word, position})}),
   draftScore: (id: string, draft: {body: string; media: string[]; buttons: number; scheduledAt: string | null; postId: string | null}, signal?: AbortSignal) => request<DraftScore>(`/channels/${encodeURIComponent(id)}/draft-score`, {method: 'POST', body: JSON.stringify(draft), signal}),
   bestSlots: (id: string, count: number) => request<FreeSlot[]>(`/channels/${encodeURIComponent(id)}/best-slots?count=${count}`),
   /** Spreads the channel's drafts over its next free good times; apply false only previews. */

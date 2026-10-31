@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Check, Copy, ExternalLink, Link2, LoaderCircle, Plus, Trash2, UserMinus, UserPlus, Users } from 'lucide-react';
-import type { Channel, ChannelGrowth, PostEffect, PromoLinkStat } from '../shared/types';
+import { Check, Copy, ExternalLink, Link2, LoaderCircle, Plus, Quote, Trash2, UserMinus, UserPlus, Users } from 'lucide-react';
+import type { Channel, ChannelGrowth, Citation, FormatEffect, PostEffect, PromoLinkStat } from '../shared/types';
 import { api, ApiError, errorMessage } from './api';
 import { isKey, useI18n, type I18n } from './i18n';
 
@@ -59,7 +59,9 @@ export function GrowthSection({channel}: {channel: Channel}) {
           <Effects title={t('growth.gainers')} empty={t('growth.gainers_empty')} posts={data.gainers}/>
           <Effects title={t('growth.losers')} empty={t('growth.losers_empty')} posts={data.losers}/>
         </div>
+        {(data.formats ?? []).length > 0 && <Formats formats={data.formats}/>}
       </>}
+      {(data.citations ?? []).length > 0 && <Citations citations={data.citations}/>}
     </section>
     <PromoLinks channel={channel} links={data.links} onChange={() => setReload(r => r + 1)}/>
   </>;
@@ -98,6 +100,33 @@ function Effects({title, empty, posts}: {title: string; empty: string; posts: Po
     </li>)}</ul>}
   </div>;
 }
+
+/** Organic subscribers each format brings, per post: the format that grows the channel isn't always the one with the most reactions. */
+function Formats({formats}: {formats: FormatEffect[]}) {
+  const i18n = useI18n();
+  const {t, tn} = i18n;
+  return <div className="growth-formats"><h3>{t('growth.formats')}</h3><p className="ins-muted">{t('growth.formats_text')}</p>
+    <ul>{formats.map(f => {const net = Math.round((f.joined - f.left) * 10) / 10; return <li key={f.kind}>
+      <span>{kindName(f.kind, t)} <small>{tn('ins.posts', f.posts)}</small></span>
+      <strong className={net >= 0 ? 'up' : 'down'}>{t('growth.per_post', {n: i18n.signed(net)})}</strong>
+      <small>+{i18n.num(f.joined, 1)} / −{i18n.num(f.left, 1)}</small>
+    </li>;})}</ul>
+  </div>;
+}
+
+/** Other channels that forwarded or mentioned this one lately: where most new subscribers come from. */
+function Citations({citations}: {citations: Citation[]}) {
+  const i18n = useI18n();
+  const {t} = i18n;
+  return <div className="growth-citations"><h3><Quote size={14}/>{t('growth.citations')}</h3><p className="ins-muted">{t('growth.citations_text')}</p>
+    <ul className="ins-posts">{citations.map(c => <li key={c.username}>
+      <span><strong dir="auto">{c.title}</strong><small><bdi dir="ltr">@{c.username}</bdi>{c.subscribers !== null && ` · ${i18n.compact(c.subscribers)}`} · {[c.forwards ? t('growth.forwards', {n: i18n.num(c.forwards)}) : '', c.mentions ? t('growth.mentions', {n: i18n.num(c.mentions)}) : ''].filter(Boolean).join(', ')} · {i18n.date(c.last, {day: 'numeric', month: 'short'})}</small></span>
+      {c.url && <a className="icon-button" href={c.url} target="_blank" rel="noreferrer" aria-label={t('ins.open_tg')}><ExternalLink size={15}/></a>}
+    </li>)}</ul>
+  </div>;
+}
+
+const pct = (x: number | null, i18n: I18n) => x === null ? '—' : `${i18n.num(Math.round(x * 100))}%`;
 
 function PromoLinks({channel, links, onChange}: {channel: Channel; links: PromoLinkStat[]; onChange: () => void}) {
   const i18n = useI18n();
@@ -138,10 +167,11 @@ function PromoLinks({channel, links, onChange}: {channel: Channel; links: PromoL
     </form>
     {error && <p className="promo-error" role="alert">{error}</p>}
     {links.length === 0 ? <p className="ins-muted promo-empty">{t('growth.promo_empty')}</p> : <div className="promo-scroll"><table className="promo-table">
-      <thead><tr><th scope="col">{t('growth.promo_name')}</th><th scope="col">{t('growth.joined')}</th><th scope="col">{t('growth.stayed')}</th><th scope="col">{t('growth.left')}</th><th scope="col">{t('growth.per_subscriber')}</th><th/></tr></thead>
+      <thead><tr><th scope="col">{t('growth.promo_name')}</th><th scope="col">{t('growth.joined')}</th><th scope="col">{t('growth.stayed')}</th><th scope="col">{t('growth.left')}</th><th scope="col" title={t('growth.kept_hint')}>{t('growth.kept7')}</th><th scope="col" title={t('growth.kept_hint')}>{t('growth.kept30')}</th><th scope="col">{t('growth.per_subscriber')}</th><th/></tr></thead>
       <tbody>{links.map(l => <tr key={l.id} className={l.revoked ? 'revoked' : ''}>
         <th scope="row"><strong dir="auto">{l.name}</strong><span className="promo-url">{l.revoked ? <em>{t('growth.revoked')}</em> : <><bdi>{l.url.replace(/^https:\/\//, '')}</bdi><button className="icon-button" onClick={() => copy(l)} aria-label={t('growth.copy')} title={t('growth.copy')}>{copied === l.id ? <Check size={14}/> : <Copy size={14}/>}</button></>}</span></th>
         <td>{i18n.num(l.joined)}</td><td>{i18n.num(l.stayed)}</td><td>{i18n.num(l.left)}</td>
+        <td className={l.kept7 !== null && l.kept7 < 0.6 ? 'down' : ''}>{pct(l.kept7 ?? null, i18n)}</td><td className={l.kept30 !== null && l.kept30 < 0.5 ? 'down' : ''}>{pct(l.kept30 ?? null, i18n)}</td>
         <td>{l.costPerSubscriber !== null ? <><strong>{money(l.costPerSubscriber, l.currency, i18n)}</strong><small>{t('growth.of_cost', {cost: money(l.cost!, l.currency, i18n)})}</small></> : l.cost ? '—' : <small>{t('growth.free')}</small>}</td>
         <td>{!l.revoked && <button className="icon-button" onClick={() => revoke(l)} aria-label={t('growth.revoke', {name: l.name})} title={t('growth.revoke', {name: l.name})}><Trash2 size={14}/></button>}</td>
       </tr>)}</tbody>

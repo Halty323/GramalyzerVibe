@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Channel, FeedPost } from '../shared/types.js';
+import type { Channel, DraftFactor, FeedPost, SearchCheck, TrackedSummary } from '../shared/types.js';
 import { AiError, parsePlan, readEvents } from '../src/ai/client.js';
 import { picturesOf } from '../src/ai/look.js';
-import { assistant, clip, describe, hashtags, plan, rewrite, splitPicture, splitTitle, type Context } from '../src/ai/prompts.js';
+import { assistant, clip, compare, describe, fixable, fixDraft, hashtags, plan, rewrite, searchFix, splitPicture, splitTitle, type Context } from '../src/ai/prompts.js';
 import { normalizeServer } from '../src/platform.js';
 
 const event = (content: string) => `data: ${JSON.stringify({choices: [{delta: {content}}]})}\n`;
@@ -108,4 +108,27 @@ test('picture ideas come out of a draft and become its title', () => {
 test('the pictures the model looks at: the two most engaging, then the newest, never forwards', () => {
   const feed = [...memes, {...picture('f1', '', 5000), forwardedFrom: 'Other channel'}];
   assert.deepEqual(picturesOf(feed).map(p => p.id), ['m1', 'm2', 'm3', 'm4']);
+});
+
+test('advice stays within what the data shows: no hashtag fixes, reach named as reach, search facts as facts', () => {
+  const ctx = context({feed: [post('1', 'A long article about pasta and sauces', 5)]});
+  const f = (dimension: DraftFactor['dimension'], weak: boolean, bestKey: string | null): DraftFactor => ({dimension, key: 'x', lift: 0.8, low: 0.6, high: 1.1, bestKey, bestLift: 1.3, weak, counted: dimension !== 'TOPIC'});
+  const factors = [f('LENGTH', true, 'SHORT'), f('TOPIC', true, '#pasta'), f('FORMAT', true, 'VIDEO')];
+  assert.deepEqual(fixable(factors).map(x => x.dimension), ['LENGTH']);
+  const fix = fixDraft(ctx, 'Draft', factors)[1].content;
+  assert.match(fix, /up to 120 characters/);
+  assert.doesNotMatch(fix, /hashtag/i);
+
+  const tracked = [{title: 'Rival', username: 'rival', subscribers: 1000, change7: 5, avgViews: 300, err: 30, postsPerDay: 2} as TrackedSummary];
+  const c = compare(ctx, tracked)[1].content;
+  assert.match(c, /reach \(views ÷ subscribers\) 30\.0%/);
+  assert.doesNotMatch(c, /\bER\b/);
+
+  const check = {title: 'Pasta', username: 'pasta', description: '', score: 50, find: 40, join: 10, keywords: [], notes: [], positions: [],
+    checks: [{id: 'description_present', group: 'join', status: 'BAD', points: 0, max: 12, words: []}]} as unknown as SearchCheck;
+  const [system, user] = searchFix(ctx, check);
+  assert.match(system.content, /genuine subscribers/);
+  assert.match(system.content, /Whether search reads the description is not known/);
+  assert.match(user.content, /convincing: description_present/);
+  assert.match(rewrite(ctx, 'hashtags', {title: '', body: 'x', brief: '', tone: '', target: ''})[1].content, /don't bring new readers/);
 });

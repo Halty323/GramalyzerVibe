@@ -5,8 +5,8 @@ import { errorMessage } from './api';
 import { burstFrom, ChannelAvatar, Sparkline } from './fun';
 import { useI18n, type StringKey } from './i18n';
 
-type Column = 'title' | 'subscribers' | 'change7' | 'avgViews' | 'er' | 'postsPerDay' | 'lastPost';
-const COLUMNS: [Column, StringKey][] = [['title', 'watch.col.channel'], ['subscribers', 'watch.col.subscribers'], ['change7', 'watch.col.change'], ['avgViews', 'watch.col.views'], ['er', 'watch.col.er'], ['postsPerDay', 'watch.col.per_day'], ['lastPost', 'watch.col.last']];
+type Column = 'title' | 'subscribers' | 'change7' | 'avgViews' | 'err' | 'postsPerDay' | 'lastPost';
+const COLUMNS: [Column, StringKey][] = [['title', 'watch.col.channel'], ['subscribers', 'watch.col.subscribers'], ['change7', 'watch.col.change'], ['avgViews', 'watch.col.views'], ['err', 'watch.col.err'], ['postsPerDay', 'watch.col.per_day'], ['lastPost', 'watch.col.last']];
 const value = (s: TrackedSummary, col: Column) => col === 'title' ? s.title.toLowerCase() : col === 'lastPost' ? (s.lastPost ? Date.parse(s.lastPost) : null) : s[col];
 
 /** Public channels the workspace keeps an eye on: add by username, compare, open in the viewer. */
@@ -40,7 +40,7 @@ export function Watchlist({tracked, focus, onTrack, onUntrack, onRefresh, onOpen
   const best = (pick: (s: TrackedSummary) => number | null) => rows.filter(s => (pick(s) ?? 0) > 0).sort((a, b) => pick(b)! - pick(a)!)[0];
   const highlights: [LucideIcon, StringKey, TrackedSummary | undefined, (s: TrackedSummary) => string][] = rows.length < 2 ? [] : [
     [Rocket, 'watch.fastest', best(s => s.change7), s => t('view.in_7_days', {change: signed(s.change7!)})],
-    [Flame, 'watch.engaging', best(s => s.er), s => `${t('watch.col.er')} ${num(s.er!, 1)}%`],
+    [Flame, 'watch.reach', best(s => s.err), s => `${t('watch.col.err')} ${num(s.err!, 1)}%`],
     [Zap, 'watch.busiest', best(s => s.postsPerDay), s => tn('watch.per_day', Math.round(s.postsPerDay! * 10) / 10)],
   ];
 
@@ -64,7 +64,7 @@ export function Watchlist({tracked, focus, onTrack, onUntrack, onRefresh, onOpen
         <td className="num">{s.subscribers !== null ? num(s.subscribers) : '—'}</td>
         <td className={`num ${s.change7 === null ? '' : s.change7 >= 0 ? 'up' : 'down'}`}>{s.change7 !== null ? signed(s.change7) : '—'}</td>
         <td className="num">{s.avgViews !== null ? compact(s.avgViews) : '—'}</td>
-        <td className="num">{s.er !== null ? `${num(s.er, 1)}%` : '—'}</td>
+        <td className="num">{s.err !== null ? `${num(s.err, 1)}%` : '—'}</td>
         <td className="num">{s.postsPerDay !== null ? num(s.postsPerDay, 1) : '—'}</td>
         <td>{s.lastPost ? ago(s.lastPost) : t('watch.never')}</td>
         <td><Sparkline values={s.series}/></td>

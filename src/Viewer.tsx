@@ -349,10 +349,10 @@ function ChatInfo({chat, acting, onClose, onJump, onTag, onTrack, onUntrack}: {c
   const counters: [keyof NonNullable<Chat['counters']>, LucideIcon, 'view.photos' | 'view.videos' | 'view.files' | 'view.links'][] = [['photos', Image, 'view.photos'], ['videos', Video, 'view.videos'], ['files', FileText, 'view.files'], ['links', Link2, 'view.links']];
   const tiles: [string, ReactNode, string?][] = [
     [t('view.avg_views'), s.avgViews !== null ? compact(s.avgViews) : '—'],
-    [t('view.er'), s.er !== null ? `${num(s.er, 1)}%` : '—', t('view.er_hint')],
+    [t('view.err'), s.err !== null ? `${num(s.err, 1)}%` : '—', t(s.errBasis === '24h' ? 'view.err_hint_24h' : 'view.err_hint')],
     [t('view.per_day'), s.postsPerDay !== null ? num(s.postsPerDay, 1) : '—'],
     [t('view.avg_reactions'), s.avgReactions !== null ? num(s.avgReactions, 1) : '—'],
-    [t('view.reaction_rate'), s.reactionRate !== null ? num(s.reactionRate, 2) : '—'],
+    [t('view.reaction_rate'), s.reactionRate !== null ? `${num(s.reactionRate, 2)}%` : '—', t('view.reaction_rate_hint')],
   ];
   return <aside className="tg-info" aria-label={t('view.info')}>
     <div className="tg-info-head"><strong>{t('view.info')}</strong><button className="tg-icon" aria-label={t('view.close_info')} onClick={onClose}><X size={18}/></button></div>
@@ -372,7 +372,7 @@ function ChatInfo({chat, acting, onClose, onJump, onTag, onTrack, onUntrack}: {c
       </div>
 
       {hasPosts && <section className="tg-section"><h4>{t('view.stats')}<small>{tn('view.based_on', s.sample || Math.min(chat.posts.length, 30))}</small></h4>
-        <div className="tg-tiles">{tiles.map(([label, value, hint]) => <div key={label} className="tg-tile" title={hint}><strong>{value}</strong><small>{label}</small></div>)}</div></section>}
+        <div className="tg-tiles">{tiles.map(([label, value, hint]) => <div key={label} className="tg-tile" title={hint}><strong>{value}</strong><small>{label}</small></div>)}</div>{s.flags?.length > 0 && <div className="tg-flags" role="note"><strong><TriangleAlert size={14}/>{t('view.flags')}</strong>{s.flags.map(f => <p key={f}>{t(`view.flag.${f}`)}</p>)}</div>}</section>}
 
       {chat.series.length >= 2 && <section className="tg-section"><h4>{t('view.growth')}{chat.change30 !== null && <small className={chat.change30 >= 0 ? 'up' : 'down'}>{t('view.in_30_days', {change: signed(chat.change30)})}</small>}</h4>
         <Sparkline values={chat.series} width={268} height={70} className="tg-growth"/></section>}
@@ -451,12 +451,12 @@ export function localStats(posts: FeedPost[], subscribers: number | null, now = 
   for (const p of newest) {const d = new Date(p.postedAt); hours[d.getHours()]++; days[(d.getDay() + 6) % 7]++;}
   return {
     subscribers, change7: null, change30: null, series: [], avgViews,
-    er: avgViews === null || !subscribers ? null : round2(avgViews * 100 / subscribers),
+    err: avgViews === null || !subscribers ? null : round2(avgViews * 100 / subscribers), errBasis: avgViews === null || !subscribers ? null : 'latest',
     avgReactions: recent.length ? round2(mean(recent.map(p => p.reactions))!) : null,
     reactionRate: views ? round2(reactions * 100 / views) : null,
     postsPerDay, lastPost: newest[0]?.postedAt ?? null,
     kinds: [...byKind].map(([kind, ps]) => ({kind, posts: ps.length, avgViews: viewsOf(ps)})).sort((a, b) => b.posts - a.posts),
     hashtags: [...byTag].filter(([, ps]) => ps.length >= 2).map(([tag, ps]) => ({tag, posts: ps.length, avgViews: viewsOf(ps)})).sort((a, b) => b.posts - a.posts || a.tag.localeCompare(b.tag)).slice(0, 8),
-    hours, days, sample: counted.length || recent.length,
+    hours, days, sample: counted.length || recent.length, flags: [],
   };
 }

@@ -296,7 +296,8 @@ test('insights show how fast posts get views and flag the one that lags', async 
   const speed = page.getByRole('region', {name: 'How fast your posts get views'});
   await expect(speed.getByText('Usually after 1 hour')).toBeVisible();
   await expect(speed.locator('.speed-row').first()).toBeVisible();
-  await expect(speed.locator('.speed-row').first().locator('.speed-status')).toContainText('Behind');
+  // the newest sample post past its first hour lags (a newer one may still be under an hour old)
+  await expect(speed.locator('.speed-status', {hasText: 'Behind'})).toHaveCount(1);
   await page.setViewportSize({width: 390, height: 844});
   await expect(speed.locator('.speed-row').first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -319,6 +320,14 @@ test('insights compare the channel with the watchlist and check how findable it 
   const search = page.getByRole('region', {name: 'How easy you are to find'});
   await expect(search.getByRole('img', {name: /Search score \d+ of 100/})).toBeVisible();
   await expect(search.locator('.sc-checks li').first()).toBeVisible();
+  await expect(search.getByRole('heading', {name: /Can people find it\?/})).toBeVisible();
+  await expect(search.getByRole('heading', {name: /Will they join\?/})).toBeVisible();
+  await expect(search.getByText('What no wording changes')).toBeVisible();
+  await expect(search.getByText(/ranks channels by genuine subscribers/)).toBeVisible();
+  await search.getByLabel('Word you searched').fill('maker');
+  await search.getByLabel('Position (empty: not found)').fill('7');
+  await search.getByRole('button', {name: 'Note it'}).click();
+  await expect(search.locator('.sc-positions li').filter({hasText: 'maker'})).toContainText('#7');
   await search.getByRole('button', {name: 'Rewrite with AI'}).click();
   await expect(page.getByRole('dialog', {name: 'A better name and description'})).toBeVisible();
   await page.getByRole('button', {name: 'Close dialog'}).click();
@@ -399,7 +408,7 @@ test('a draft is scored against what worked, fixed with AI, put on the best time
   let prompt = '';
   await page.route('https://ai.example.test/v1/chat/completions', async route => {
     prompt = route.request().postData() ?? '';
-    await route.fulfill({contentType: 'text/event-stream', headers: {'Access-Control-Allow-Origin': '*'}, body: `data: ${JSON.stringify({choices: [{delta: {content: 'A sharper tip of the day #typography'}}]})}\n\ndata: [DONE]\n\n`});
+    await route.fulfill({contentType: 'text/event-stream', headers: {'Access-Control-Allow-Origin': '*'}, body: `data: ${JSON.stringify({choices: [{delta: {content: 'A sharper tip of the day'}}]})}\n\ndata: [DONE]\n\n`});
   });
   await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
   await page.evaluate(() => localStorage.setItem('gramalyzer.ai', JSON.stringify({provider: 'custom', baseUrl: 'https://ai.example.test/v1', apiKey: 'test-key', model: 'test-model', voice: '', contentLang: ''})));
@@ -407,19 +416,37 @@ test('a draft is scored against what worked, fixed with AI, put on the best time
   await page.getByLabel('Filter channel').selectOption('design');
   await page.getByRole('button', {name: 'New post', exact: true}).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Message', {exact: true}).fill('Quick tip of the day');
+  await dialog.getByLabel('Message', {exact: true}).fill('Quick tip of the day #typography');
   const score = dialog.getByRole('region', {name: 'Draft score'});
+  // the sample design channel's score predicted its newest posts, so it shows a number
   await expect(score.locator('.ds-score strong')).toHaveText(/^\d+$/);
+  await expect(score.locator('.ds-proof')).toContainText(/Checked on your \d+ newest posts/);
   await expect(score.locator('li.weak').filter({hasText: 'Format'})).toContainText('Try Video');
-  await expect(score.locator('li.weak').filter({hasText: 'Hashtags'})).toContainText('#typography');
+  // hashtags are context, never advice
+  await expect(score.locator('li.context').filter({hasText: 'Topics'})).toContainText('#typography');
+  await expect(score.getByRole('button', {name: 'Fix with AI'})).toHaveCount(0);
   await score.getByRole('button', {name: /^Use best time/}).click();
   await expect(score.getByText('On the best free time')).toBeVisible();
+
+  // the sample tech channel's score didn't beat chance on its newest posts: factors, no number
+  await dialog.getByLabel('Channel').selectOption('tech');
+  await expect(score.getByText('Not proven yet')).toBeVisible();
+  await expect(score.locator('.ds-score')).toHaveCount(0);
+  await expect(score.locator('li').filter({hasText: 'Format'})).toBeVisible();
+
+  // a draft whose length clearly works worse gets an AI fix for it
+  await page.route('**/draft-score', route => route.fulfill({json: {connected: true, slots: [], score: {status: 'ready', score: 38, expected: 0.85, potential: 1.2, low: 0.7, high: 1, postsRead: 80,
+    check: {status: 'proven', rho: 0.4, tested: 20}, factors: [{dimension: 'LENGTH', key: 'LONG', lift: 0.8, low: 0.7, high: 0.92, bestKey: 'SHORT', bestLift: 1.25, weak: true, counted: true}]}}}));
+  await dialog.getByLabel('Channel').selectOption('design');
+  await dialog.getByLabel('Message', {exact: true}).fill('Quick tip of the day, with a long story around it');
+  await expect(score.locator('li.weak').filter({hasText: 'Length'})).toContainText('Try');
   await score.getByRole('button', {name: 'Fix with AI'}).click();
-  await expect(score.locator('.ai-text')).toHaveText('A sharper tip of the day #typography');
-  expect(prompt).toContain('Add the hashtag #typography');
+  await expect(score.locator('.ai-text')).toHaveText('A sharper tip of the day');
+  expect(prompt).toContain('up to 120 characters');
+  expect(prompt).not.toContain('Add the hashtag');
   await score.getByRole('button', {name: 'Replace text'}).click();
-  await expect(dialog.getByLabel('Message', {exact: true})).toHaveValue('A sharper tip of the day #typography');
-  await expect(score.locator('li').filter({hasText: 'Hashtags'})).not.toHaveClass(/weak/);
+  await expect(dialog.getByLabel('Message', {exact: true})).toHaveValue('A sharper tip of the day');
+  await page.unroute('**/draft-score');
   if (process.env.SHOTS) await page.screenshot({path: `${process.env.SHOTS}/draft-score.png`});
   await dialog.getByLabel('Save as').selectOption('draft');
   await dialog.getByLabel('Post title').fill(`Score test ${Date.now() % 100000}`);
@@ -439,7 +466,8 @@ test('a draft is scored against what worked, fixed with AI, put on the best time
   const preview = await first.locator('strong').textContent();
   await first.getByRole('button', {name: 'Repost'}).click();
   await expect(page.locator('.toast')).toContainText('Repost queued for');
-  await expect(evergreen.locator('li').filter({hasText: preview!.slice(0, 30)})).toContainText('Queued for');
+  // the sample channel has posts that start alike, so look for the one now queued
+  await expect(evergreen.locator('li').filter({hasText: preview!.slice(0, 30)}).filter({hasText: 'Queued for'})).toHaveCount(1);
   await page.setViewportSize({width: 390, height: 844});
   await expect(evergreen.locator('.evergreen-list li').first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
