@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed, CompetitorGaps, SearchCheck, SearchPosition, RefreshStatus, DraftScore, Evergreen, FreeSlot, Post, SlotAssignment } from '../shared/types';
+import type { Channel, ChannelFeed, ChannelGrowth, ChannelInsights, CrossPromo, MediaRef, PromoLinkStat, SwapProfile, SwapView, TrackedDetail, TrackedSummary, TrackingError, ViewSpeed, CompetitorGaps, SearchCheck, SearchPosition, RefreshStatus, DraftScore, Evergreen, FreeSlot, Post, SlotAssignment, ChannelGoal } from '../shared/types';
 import type { I18n } from './i18n';
 import { apiUrl, authHeaders, httpFetch, isApp } from './platform';
 
@@ -65,6 +65,10 @@ export const api = {
   fillSlots: (id: string, apply: boolean, postIds?: string[]) => request<SlotAssignment[]>(`/channels/${encodeURIComponent(id)}/fill-slots`, {method: 'POST', body: JSON.stringify({postIds: postIds ?? null, apply})}),
   evergreen: (id: string) => request<Evergreen>(`/channels/${encodeURIComponent(id)}/evergreen`),
   repost: (id: string, messageId: number) => request<Post>(`/channels/${encodeURIComponent(id)}/evergreen/${messageId}`, {method: 'POST'}),
+  goal: (id: string) => request<ChannelGoal>(`/channels/${encodeURIComponent(id)}/goal`),
+  setGoal: (id: string, target: number, deadline: string) => request<ChannelGoal>(`/channels/${encodeURIComponent(id)}/goal`, {method: 'PUT', body: JSON.stringify({target, deadline})}),
+  clearGoal: (id: string) => request<ChannelGoal>(`/channels/${encodeURIComponent(id)}/goal`, {method: 'DELETE'}),
+  setStreak: (id: string, postsPerWeek: number) => request<ChannelGoal>(`/channels/${encodeURIComponent(id)}/streak`, {method: 'PUT', body: JSON.stringify({postsPerWeek})}),
   crossPromo: (id: string) => request<CrossPromo>(`/channels/${encodeURIComponent(id)}/cross-promo`),
   saveSwapProfile: (id: string, profile: SwapProfile) => request<SwapProfile>(`/channels/${encodeURIComponent(id)}/cross-promo/profile`, {method: 'PUT', body: JSON.stringify(profile)}),
   proposeSwap: (id: string, partner: number) => request<SwapView>(`/channels/${encodeURIComponent(id)}/cross-promo/swaps`, {method: 'POST', body: JSON.stringify({partner})}),

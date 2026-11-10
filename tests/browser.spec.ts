@@ -476,3 +476,38 @@ test('a draft is scored against what worked, fixed with AI, put on the best time
   for (const p of queued) await page.request.delete(`/api/posts/${p.id}`);
   expect(errors).toEqual([]);
 });
+test('a subscriber goal shows its pace, and the posting streak follows the posts a week chosen', async ({page}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({width: 1440, height: 900}); await page.goto('/');
+  await page.request.delete('/api/channels/design/goal'); // the demo database outlives a run
+  await page.request.put('/api/channels/design/streak', {data: {postsPerWeek: 3}});
+  await page.getByLabel('Filter channel').selectOption('design');
+  const panel = page.getByRole('region', {name: 'Your goal and posting streak'});
+  await expect(panel.getByText(/^No goal yet\. The channel has [\d,]+ subscribers/)).toBeVisible();
+  await expect(panel.locator('.streak-count strong')).toHaveText(/^\d+$/);
+  await panel.getByRole('button', {name: /^\+[\d,]+ by /}).first().click();
+  await expect(panel.locator('.goal-state')).toHaveText(/On track|Behind/);
+  await expect(panel.locator('.goal-numbers strong').first()).toContainText(' by ');
+  await expect(panel.getByText(/^Pace: \+/)).toBeVisible();
+
+  await panel.getByRole('button', {name: 'Change'}).click();
+  await panel.getByLabel('By', {exact: true}).fill('2020-01-01');
+  await panel.getByRole('button', {name: 'Set goal'}).click();
+  await expect(panel.getByRole('alert')).toHaveText('Pick a date after today and within two years.');
+  await panel.getByRole('button', {name: 'Cancel'}).click();
+
+  await panel.getByLabel('Posts a week for the streak').selectOption('14');
+  await expect(panel.getByText('14+ posts a week')).toBeVisible();
+  await expect(panel.locator('.streak-weeks .met')).toHaveCount(0);
+  await panel.getByLabel('Posts a week for the streak').selectOption('3');
+  await expect(panel.locator('.streak-weeks .met').first()).toBeVisible();
+  if (process.env.SHOTS) {await page.waitForTimeout(1200); await panel.screenshot({path: `${process.env.SHOTS}/goal-panel.png`});}
+
+  await page.locator('nav').getByRole('button', {name: 'Insights'}).click();
+  await expect(page.getByRole('region', {name: 'Your goal and posting streak'}).locator('.goal-state')).toBeVisible();
+  await page.setViewportSize({width: 390, height: 844});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  if (process.env.SHOTS) {await page.waitForTimeout(800); await page.getByRole('region', {name: 'Your goal and posting streak'}).screenshot({path: `${process.env.SHOTS}/goal-phone.png`});}
+  await page.request.delete('/api/channels/design/goal');
+  expect(errors).toEqual([]);
+});

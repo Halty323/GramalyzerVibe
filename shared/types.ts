@@ -192,3 +192,14 @@ export type SlotAssignment = {postId: string; title: string; at: string; lift: n
 /** GET /api/channels/:id/evergreen – best posts from 3+ months ago; queuedAt is set when a repost is already queued. */
 export type EvergreenPost = {messageId: number; postedAt: string; kind: string; preview: string; url: string | null; lift: number; queuedAt: string | null};
 export type Evergreen = {connected: boolean; posts: EvergreenPost[]};
+/** GET /api/channels/:id/goal – a subscriber goal with its pace, and the weekly posting streak. */
+export type GoalState = 'ON_TRACK' | 'BEHIND' | 'REACHED' | 'MISSED' | 'NO_DATA';
+/** perDay: subscribers a day over the last 2 weeks (null without readings 2+ days apart); projected: on the deadline at that pace. */
+export type GoalProgress = {
+  target: number; deadline: string; start: number; current: number | null; gained: number; needed: number; percent: number; daysLeft: number;
+  perDay: number | null; needPerDay: number; projected: number | null; eta: string | null; state: GoalState; startedAt: string; reachedAt: string | null;
+};
+/** weeks: full weeks in a row with target+ posts (this week counts once it has them); recent: the last 8 weeks, oldest first, this week last. */
+export type PostingStreak = {target: number; weeks: number; best: number; thisWeek: number; daysLeft: number; recent: number[]};
+export type GoalSuggestion = {target: number; deadline: string; gain: number};
+export type ChannelGoal = {connected: boolean; status: {subscribers: number | null; goal: GoalProgress | null; streak: PostingStreak; suggestions: GoalSuggestion[]} | null};
